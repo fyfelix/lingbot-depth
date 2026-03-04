@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+cd /Node09_nvme/fanyu/lingbot-depth
+export PYTHONPATH="$PWD:$PYTHONPATH"
+
 MODEL_PATH=${1:-"ckpts/model.pt"}
 DATASET_PATH=${2:-"data/HAMMER/test.jsonl"}
 CAMERA_TYPE=${3:-"d435"}

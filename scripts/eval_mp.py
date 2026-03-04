@@ -14,7 +14,7 @@ from loguru import logger
 
 # Add project root to sys.path to import from external_files
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from external_files.metric import (
+from utils.metric import (
     abs_relative_difference,
     rmse_linear,
     delta1_acc,
