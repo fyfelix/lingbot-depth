@@ -26,7 +26,18 @@ def parse_arguments():
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--depth-scale", type=float, default=1000.0)
     parser.add_argument("--max-depth", type=float, default=6.0)
-    parser.add_argument("--vis-max-depth", type=float, default=2.0)
+    parser.add_argument(
+        "--vis-max-depth",
+        type=float,
+        default=2.0,
+        help="Fallback depth visualization max in meters when no valid percentile can be computed",
+    )
+    parser.add_argument(
+        "--vis-percentile",
+        type=float,
+        default=99.0,
+        help="Valid-depth percentile used as the visualization upper bound",
+    )
     parser.add_argument("--pc-rot-x-deg", type=float, default=25.0)
     parser.add_argument("--pc-rot-y-deg", type=float, default=15.0)
     parser.add_argument("--pc-knn-k", type=int, default=16)
@@ -141,6 +152,10 @@ def validate_inputs(args):
         raise ValueError("--depth-scale must be greater than 0")
     if args.max_depth <= 0:
         raise ValueError("--max-depth must be greater than 0")
+    if args.vis_max_depth <= 0:
+        raise ValueError("--vis-max-depth must be greater than 0")
+    if not (0.0 < args.vis_percentile <= 100.0):
+        raise ValueError("--vis-percentile must be in the range (0, 100]")
     if args.pc_knn_k < 1:
         raise ValueError("--pc-knn-k must be greater than 0")
     if args.pc_knn_std_ratio < 0:
@@ -207,11 +222,15 @@ def load_lab_intrinsics(meta_path):
     )
 
 
-def colorize_depth(depth, max_depth):
+def colorize_depth(depth, fallback_max_depth, percentile=99.0):
     depth = np.asarray(depth, dtype=np.float32)
     valid = (depth > 0) & np.isfinite(depth)
-    if max_depth <= 0:
-        max_depth = max(float(depth[valid].max()), 1.0) if valid.any() else 1.0
+    if valid.any():
+        max_depth = float(np.nanpercentile(depth[valid], percentile))
+    else:
+        max_depth = float(fallback_max_depth)
+    if not np.isfinite(max_depth) or max_depth <= 0:
+        max_depth = float(fallback_max_depth)
 
     norm = np.clip(depth / max_depth, 0.0, 1.0)
     colored = matplotlib.colormaps["Spectral_r"](norm)[..., :3]
@@ -390,6 +409,7 @@ def make_lab_visualization(
     pred_depth,
     intrinsics,
     vis_max_depth,
+    vis_percentile,
     pc_rot_x_deg,
     pc_rot_y_deg,
     pc_knn_k,
@@ -400,8 +420,8 @@ def make_lab_visualization(
     raw_depth = resize_depth_to(raw_depth, target_hw)
     pred_depth = resize_depth_to(pred_depth, target_hw)
 
-    raw_vis = colorize_depth(raw_depth, vis_max_depth)
-    pred_vis = colorize_depth(pred_depth, vis_max_depth)
+    raw_vis = colorize_depth(raw_depth, vis_max_depth, vis_percentile)
+    pred_vis = colorize_depth(pred_depth, vis_max_depth, vis_percentile)
     raw_pc = render_pointcloud_reproject(
         raw_depth,
         intrinsics,
@@ -567,6 +587,7 @@ def run_inference(args):
                     pred,
                     intrinsics=intrinsics_list[index],
                     vis_max_depth=args.vis_max_depth,
+                    vis_percentile=args.vis_percentile,
                     pc_rot_x_deg=args.pc_rot_x_deg,
                     pc_rot_y_deg=args.pc_rot_y_deg,
                     pc_knn_k=args.pc_knn_k,
