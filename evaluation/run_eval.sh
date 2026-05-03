@@ -27,11 +27,13 @@ Environment overrides:
   PYTHON_BIN         Python executable. Default: .venv/bin/python if present, otherwise python
   DEVICE             Inference device: auto/cuda/mps/cpu. Default: auto
   RESOLUTION_LEVEL   LingBot-Depth resolution level. Default: 9
+  SAVE_VIS           Save RGB/raw/pred visualization images. Default: true
 
 This wrapper is fixed for LingBot-Depth-v0.5 on HAMMER/ClearPose:
   - inference uses mdm.model.v2.MDMModel
   - input is RGB + selected raw depth (HAMMER: d435/l515/tof, ClearPose: d435 only)
   - predictions are saved as HxW float32 metric depth in meters
+  - visualizations are saved by default unless SAVE_VIS=false
   - eval.py reads those .npy files and computes the original fixed metrics
 EOF
 }
@@ -50,6 +52,7 @@ batch_size="${BATCH_SIZE:-1}"
 num_workers="${NUM_WORKERS:-0}"
 device="${DEVICE:-auto}"
 resolution_level="${RESOLUTION_LEVEL:-9}"
+save_vis="${SAVE_VIS:-true}"
 run_timestamp="$(date +%Y-%m-%d_%H-%M-%S)"
 
 case "${dataset_path}" in
@@ -79,7 +82,13 @@ echo "batch size: ${batch_size}"
 echo "num workers: ${num_workers}"
 echo "device: ${device}"
 echo "resolution level: ${resolution_level}"
+echo "save visualization: ${save_vis}"
 echo "cleanup npy: ${cleanup_npy}"
+
+infer_extra_args=()
+if [[ "${save_vis}" == "true" ]]; then
+    infer_extra_args+=(--save-vis)
+fi
 
 "${PYTHON_BIN}" "${SCRIPT_DIR}/infer.py" \
     --model-path "${model_path}" \
@@ -89,7 +98,8 @@ echo "cleanup npy: ${cleanup_npy}"
     --batch-size "${batch_size}" \
     --num-workers "${num_workers}" \
     --device "${device}" \
-    --resolution-level "${resolution_level}"
+    --resolution-level "${resolution_level}" \
+    "${infer_extra_args[@]}"
 
 echo "evaluating the model on ${dataset_tag}"
 time "${PYTHON_BIN}" "${SCRIPT_DIR}/eval.py" \
