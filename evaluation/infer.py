@@ -5,6 +5,8 @@ import os
 import sys
 from pathlib import Path
 
+os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
+
 import cv2
 import numpy as np
 import torch
@@ -15,13 +17,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dataset import ClearPoseDataset, HAMMERDataset
+from dataset import load_test_dataset, sample_name_for_dataset
 from mdm.model.v2 import MDMModel
 
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="LingBot-Depth HAMMER/ClearPose inference",
+        description="LingBot-Depth HAMMER/ClearPose/DREDS inference",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -34,20 +36,20 @@ def parse_arguments():
         "--dataset",
         type=str,
         required=True,
-        help="HAMMER or ClearPose JSONL path",
+        help="HAMMER, ClearPose, or DREDS JSONL path",
     )
     parser.add_argument(
         "--output",
         type=str,
         default="evaluation/output",
-        help="Directory for .npy predictions and args.json",
+        help="Directory for args, predictions, and optional visualizations",
     )
     parser.add_argument(
         "--raw-type",
         type=str,
         required=True,
         choices=["d435", "l515", "tof"],
-        help="Raw depth type. ClearPose only supports d435.",
+        help="Raw depth type. ClearPose only supports d435; DREDS ignores this value.",
     )
     parser.add_argument(
         "--depth-scale",
@@ -99,7 +101,7 @@ def parse_arguments():
     parser.add_argument(
         "--save-vis",
         action="store_true",
-        help="Save optional RGB/raw/pred visualization images",
+        help="Save optional RGB/raw/pred/GT visualization images",
     )
     parser.add_argument(
         "--image-min",
@@ -142,32 +144,16 @@ def validate_inputs(args):
     os.makedirs(args.output, exist_ok=True)
 
 
-def load_dataset_for_eval(dataset_path, raw_type):
-    dataset_lower = dataset_path.lower()
-    if "clearpose" in dataset_lower:
-        if raw_type != "d435":
-            raise ValueError("ClearPose dataset only supports raw-type=d435")
-        return ClearPoseDataset(dataset_path)
-    if "hammer" in dataset_lower:
-        return HAMMERDataset(dataset_path, raw_type)
-    raise ValueError(f"Invalid dataset: {dataset_path}")
-
-
-def resolve_sample_name(rgb_path, dataset_path):
-    parts = Path(rgb_path).parts
-    dataset_lower = dataset_path.lower()
-
-    if "hammer" in dataset_lower:
-        if len(parts) < 4:
-            raise ValueError(f"Unexpected HAMMER rgb path: {rgb_path}")
-        return f"{parts[-4]}#{Path(rgb_path).stem}"
-
-    if "clearpose" in dataset_lower:
-        if len(parts) < 3:
-            raise ValueError(f"Unexpected ClearPose rgb path: {rgb_path}")
-        return f"{'#'.join(parts[-3:-1])}#{Path(rgb_path).stem}"
-
-    raise ValueError(f"Invalid dataset: {dataset_path}")
+def squeeze_depth(depth):
+    depth = np.asarray(depth)
+    if depth.ndim == 3:
+        if depth.shape[-1] == 1:
+            depth = depth[..., 0]
+        else:
+            depth = depth[..., 0]
+    if depth.ndim != 2:
+        raise ValueError(f"Expected 2D depth map, got shape {depth.shape}")
+    return depth
 
 
 def load_rgb(rgb_path, device):
@@ -186,7 +172,7 @@ def load_raw_depth(depth_path, depth_scale, max_depth, device):
     if depth is None:
         raise ValueError(f"Failed to read raw depth: {depth_path}")
 
-    depth = depth.astype(np.float32) / depth_scale
+    depth = squeeze_depth(depth).astype(np.float32) / depth_scale
     valid = np.isfinite(depth) & (depth > 0)
     if max_depth is not None:
         valid &= depth <= max_depth
@@ -196,6 +182,16 @@ def load_raw_depth(depth_path, depth_scale, max_depth, device):
     return depth, depth_tensor
 
 
+def load_gt_depth(depth_path, depth_scale, max_depth, min_depth):
+    depth_gt = cv2.imread(str(depth_path), cv2.IMREAD_UNCHANGED)
+    if depth_gt is None:
+        raise ValueError(f"Could not load GT depth from {depth_path}")
+
+    depth_gt = squeeze_depth(depth_gt).astype(np.float32) / depth_scale
+    valid = np.isfinite(depth_gt) & (depth_gt >= min_depth) & (depth_gt <= max_depth)
+    return np.where(valid, depth_gt, 0.0).astype(np.float32)
+
+
 def normalize_prediction(pred_depth, target_shape):
     pred = np.asarray(pred_depth, dtype=np.float32)
     if pred.ndim == 3 and pred.shape[0] == 1:
@@ -203,7 +199,11 @@ def normalize_prediction(pred_depth, target_shape):
     if pred.ndim != 2:
         raise ValueError(f"Expected HxW prediction, got shape {pred.shape}")
     if pred.shape != target_shape:
-        pred = cv2.resize(pred, (target_shape[1], target_shape[0]), interpolation=cv2.INTER_LINEAR)
+        pred = cv2.resize(
+            pred,
+            (target_shape[1], target_shape[0]),
+            interpolation=cv2.INTER_LINEAR,
+        )
     pred = np.nan_to_num(pred, nan=0.0, posinf=0.0, neginf=0.0)
     return pred.astype(np.float32, copy=False)
 
@@ -217,11 +217,36 @@ def colorize_depth(depth, vmin, vmax):
     return colored
 
 
-def save_visualization(output_dir, name, rgb, raw_depth, pred_depth, image_min, image_max):
+def resize_for_visualization(depth, target_shape):
+    if depth.shape == target_shape:
+        return depth
+    return cv2.resize(
+        depth.astype(np.float32, copy=False),
+        (target_shape[1], target_shape[0]),
+        interpolation=cv2.INTER_NEAREST,
+    )
+
+
+def save_visualization(
+    output_dir,
+    name,
+    rgb,
+    raw_depth,
+    pred_depth,
+    gt_depth,
+    image_min,
+    image_max,
+):
+    target_shape = rgb.shape[:2]
+    raw_depth = resize_for_visualization(raw_depth, target_shape)
+    pred_depth = resize_for_visualization(pred_depth, target_shape)
+    gt_depth = resize_for_visualization(gt_depth, target_shape)
+
     rgb_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     raw_vis = colorize_depth(raw_depth, image_min, image_max)
     pred_vis = colorize_depth(pred_depth, image_min, image_max)
-    grid = np.concatenate([rgb_bgr, raw_vis, pred_vis], axis=1)
+    gt_vis = colorize_depth(gt_depth, image_min, image_max)
+    grid = np.concatenate([rgb_bgr, raw_vis, pred_vis, gt_vis], axis=1)
     cv2.imwrite(str(Path(output_dir) / f"{name}_vis.jpg"), grid)
 
 
@@ -230,9 +255,19 @@ def run_inference(args):
     validate_inputs(args)
     device = select_device(args.device)
 
-    dataset = load_dataset_for_eval(args.dataset, args.raw_type)
+    dataset, dataset_kind = load_test_dataset(args.dataset, args.raw_type)
+    args.dataset_kind = dataset_kind
+    if hasattr(dataset, "depth_scale"):
+        args.depth_scale = dataset.depth_scale
+
     min_depth, dataset_max_depth = dataset.depth_range
     max_depth = args.max_depth if args.max_depth is not None else dataset_max_depth
+
+    predictions_dir = Path(args.output) / "predictions"
+    visualizations_dir = Path(args.output) / "visualizations"
+    predictions_dir.mkdir(parents=True, exist_ok=True)
+    if args.save_vis:
+        visualizations_dir.mkdir(parents=True, exist_ok=True)
 
     model = MDMModel.from_pretrained(args.model_path).to(device).eval()
 
@@ -259,11 +294,16 @@ def run_inference(args):
     use_fp16 = args.use_fp16 and device.type == "cuda"
 
     for batch_items in tqdm(dataloader, desc="LingBot-Depth inference"):
-        rgb_paths, raw_depth_paths, _gt_depth_paths = batch_items
-        for rgb_path, raw_depth_path in zip(rgb_paths, raw_depth_paths):
+        rgb_paths, raw_depth_paths, gt_depth_paths = batch_items
+        for rgb_path, raw_depth_path, gt_depth_path in zip(
+            rgb_paths,
+            raw_depth_paths,
+            gt_depth_paths,
+        ):
             rgb_path = str(rgb_path)
             raw_depth_path = str(raw_depth_path)
-            name = resolve_sample_name(rgb_path, args.dataset)
+            gt_depth_path = str(gt_depth_path)
+            name = sample_name_for_dataset(dataset_kind, rgb_path)
 
             rgb, image_tensor = load_rgb(rgb_path, device)
             raw_depth, depth_tensor = load_raw_depth(
@@ -290,15 +330,22 @@ def run_inference(args):
             pred_depth = output["depth"].detach().cpu().numpy()
             pred_depth = normalize_prediction(pred_depth, raw_depth.shape)
 
-            np.save(Path(args.output) / f"{name}.npy", pred_depth)
+            np.save(predictions_dir / f"{name}.npy", pred_depth)
 
             if args.save_vis:
+                gt_depth = load_gt_depth(
+                    gt_depth_path,
+                    depth_scale=args.depth_scale,
+                    max_depth=max_depth,
+                    min_depth=min_depth,
+                )
                 save_visualization(
-                    args.output,
+                    visualizations_dir,
                     name,
                     rgb,
                     raw_depth,
                     pred_depth,
+                    gt_depth,
                     args.image_min,
                     args.image_max,
                 )
