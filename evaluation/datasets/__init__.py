@@ -3,6 +3,7 @@ from evaluation.datasets.clearpose import load_clearpose
 from evaluation.datasets.dreds import load_dreds
 from evaluation.datasets.hammer import load_hammer
 from evaluation.datasets.ibims import load_ibims
+from evaluation.datasets.kitti import load_kitti
 
 __all__ = [
     "DatasetCollection",
@@ -10,4 +11,5 @@ __all__ = [
     "load_dreds",
     "load_hammer",
     "load_ibims",
+    "load_kitti",
 ]

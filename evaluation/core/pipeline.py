@@ -29,6 +29,8 @@ def utc_now() -> str:
 def serialized_config(config: RunConfig) -> Dict[str, Any]:
     value = asdict(config)
     value["run_dir"] = str(config.run_dir)
+    if config.intrinsics_path is not None:
+        value["intrinsics_path"] = str(config.intrinsics_path)
     return value
 
 

@@ -8,7 +8,7 @@ version = "1.0.0"
 readme = "README.md"
 dependencies = [
     "click",
-    "opencv-python",
+    "opencv-python>=4.14,<5",
     "scipy",
     "matplotlib",
     "trimesh",
@@ -17,7 +17,6 @@ dependencies = [
     "numpy",
     "torch==2.6.0",
     "torchvision",
-    "xformers==v0.0.29.post2; platform_system == 'Linux'",
 ]
 requires-python = ">=3.9"
 

@@ -72,6 +72,21 @@ def normalize_prediction(prediction: Any, target_shape: Tuple[int, int]) -> np.n
     return pred
 
 
+def normalize_asdepth_prediction(prediction: Any, target_shape: Tuple[int, int]) -> np.ndarray:
+    """Normalize a prediction using AS-Depth's KITTI inference semantics.
+
+    AS-Depth only restores the two-dimensional target shape; it does not turn
+    finite zero/negative values into NaNs and does not sanitize non-finite
+    values before saving them for evaluation.
+    """
+
+    pred = squeeze_depth(prediction).astype(np.float32, copy=False)
+    if pred.shape != target_shape:
+        height, width = target_shape
+        pred = cv2.resize(pred, (width, height), interpolation=cv2.INTER_LINEAR)
+    return pred.astype(np.float32, copy=False)
+
+
 def align_prediction_for_evaluation(
     prediction: np.ndarray,
     target_shape: Tuple[int, int],

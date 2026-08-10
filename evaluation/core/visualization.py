@@ -4,7 +4,10 @@ from pathlib import Path
 from typing import Optional
 
 import cv2
+import matplotlib
 import numpy as np
+
+from evaluation.core.pointcloud import load_intrinsics, render_pointcloud
 
 
 def colorize_depth(depth: np.ndarray, min_depth: float, max_depth: float) -> np.ndarray:
@@ -72,3 +75,52 @@ def save_visualization(
     path.parent.mkdir(parents=True, exist_ok=True)
     if not cv2.imwrite(str(path), np.concatenate(panels, axis=1)):
         raise OSError(f"Could not write visualization: {path}")
+
+
+def colorize_kitti_depth(
+    depth: np.ndarray, min_depth: float, max_depth: float
+) -> np.ndarray:
+    valid = np.isfinite(depth) & (depth > 0.0)
+    denominator = max(max_depth - min_depth, 1e-6)
+    scaled = np.clip((np.nan_to_num(depth, nan=min_depth) - min_depth) / denominator, 0, 1)
+    colored = (matplotlib.colormaps["Spectral_r"](scaled)[..., :3] * 255).astype(np.uint8)
+    colored[~valid] = 0
+    return colored
+
+
+def save_kitti_prediction_visualization(
+    path: Path,
+    prediction: np.ndarray,
+    min_depth: float,
+    max_depth: float,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prediction_rgb = colorize_kitti_depth(prediction, min_depth, max_depth)
+    if not cv2.imwrite(str(path), cv2.cvtColor(prediction_rgb, cv2.COLOR_RGB2BGR)):
+        raise OSError(f"Could not write KITTI prediction visualization: {path}")
+
+
+def save_kitti_pointcloud_visualization(
+    pointcloud_path: Path,
+    rgb: np.ndarray,
+    prediction: np.ndarray,
+    intrinsics_path: Path,
+    rot_x_deg: float,
+    rot_y_deg: float,
+    knn_k: int,
+    knn_std_ratio: float,
+    disable_knn: bool,
+) -> None:
+    pointcloud_path.parent.mkdir(parents=True, exist_ok=True)
+    pointcloud = render_pointcloud(
+        prediction,
+        rgb,
+        load_intrinsics(intrinsics_path),
+        rot_x_deg=rot_x_deg,
+        rot_y_deg=rot_y_deg,
+        knn_k=knn_k,
+        knn_std_ratio=knn_std_ratio,
+        disable_knn=disable_knn,
+    )
+    if not cv2.imwrite(str(pointcloud_path), cv2.cvtColor(pointcloud, cv2.COLOR_RGB2BGR)):
+        raise OSError(f"Could not write KITTI point-cloud visualization: {pointcloud_path}")

@@ -20,6 +20,7 @@ class EvaluationSample:
     allow_evaluation_resize: bool = False
     expected_shape: Optional[Tuple[int, int]] = None
     metadata: Dict[str, Any] = field(default_factory=dict, compare=False)
+    raw_max_depth: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,12 @@ class RunConfig:
     max_samples: Optional[int] = None
     visualization_min_depth: float = 0.1
     visualization_max_depth: float = 5.0
+    intrinsics_path: Optional[Path] = None
+    pointcloud_rot_x_deg: float = 25.0
+    pointcloud_rot_y_deg: float = 15.0
+    pointcloud_knn_k: int = 16
+    pointcloud_knn_std_ratio: float = 2.0
+    disable_pointcloud_knn_filter: bool = False
 
 
 @dataclass(frozen=True)

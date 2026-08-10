@@ -253,7 +253,12 @@ class NestedTensorBlock(Block):
             return super().forward(x_or_x_list)
         elif isinstance(x_or_x_list, list):
             if not XFORMERS_AVAILABLE:
-                raise AssertionError("xFormers is required for using nested tensors")
+                # A block-diagonal attention over independent variable-length
+                # samples is equivalent to applying the same block to every
+                # sample separately. This native PyTorch fallback preserves
+                # depth-token masking without requiring xFormers; it is slower
+                # for batched inputs, but inference currently uses batch size 1.
+                return [Block.forward(self, x) for x in x_or_x_list]
             return self.forward_nested(x_or_x_list)
         else:
             raise AssertionError

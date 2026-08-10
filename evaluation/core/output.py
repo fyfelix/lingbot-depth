@@ -63,6 +63,14 @@ class RunLayout:
     def visualization_path(self, sample: EvaluationSample) -> Path:
         return self.visualizations_dir / sample_relative_path(sample, "_vis.jpg")
 
+    def kitti_prediction_visualization_path(self, sample: EvaluationSample) -> Path:
+        scene, frame = kitti_scene_frame(sample)
+        return self.root / "kitti_visualization" / "predictions" / scene / f"{frame}.jpg"
+
+    def kitti_pointcloud_visualization_path(self, sample: EvaluationSample) -> Path:
+        scene, frame = kitti_scene_frame(sample)
+        return self.root / "kitti_visualization" / "pointclouds" / scene / f"{frame}.jpg"
+
     def official_prediction_dir(self, subset: str) -> Path:
         return self.official_dir / subset / "predictions"
 
@@ -112,6 +120,14 @@ def write_csv(path: Path, rows: Sequence[Mapping[str, Any]], fieldnames: Iterabl
 def save_prediction(path: Path, prediction: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     np.save(path, np.asarray(prediction, dtype=np.float32), allow_pickle=False)
+
+
+def kitti_scene_frame(sample: EvaluationSample) -> tuple[str, str]:
+    scene = sanitize_component(str(sample.metadata.get("scene", "")))
+    frame = sanitize_component(str(sample.metadata.get("frame", "")))
+    if not scene or scene == "run" or not frame or frame == "run":
+        raise ValueError(f"KITTI scene/frame metadata is missing for {sample.sample_id}")
+    return scene, frame
 
 
 def read_run_metadata(layout: RunLayout) -> Dict[str, Any]:
