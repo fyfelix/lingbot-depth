@@ -17,10 +17,34 @@ dependencies = [
     "numpy",
     "torch==2.6.0",
     "torchvision",
-    "xformers==v0.0.29.post2",
+    "xformers==v0.0.29.post2; platform_system == 'Linux'",
 ]
 requires-python = ">=3.9"
+
+[project.optional-dependencies]
+evaluation = [
+    "scikit-image",
+    "scikit-learn",
+    "tqdm",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.12",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["mdm*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

@@ -61,7 +61,7 @@ We provide pretrained models for different scenarios:
 
 ### Requirements
 
-• Python ≥ 3.9 • PyTorch ≥ 2.0.0 • CUDA-capable GPU (recommended)
+• Python ≥ 3.9 • uv • PyTorch ≥ 2.0.0 • CUDA-capable GPU (recommended)
  
 ### From source
 
@@ -69,10 +69,8 @@ We provide pretrained models for different scenarios:
 git clone https://github.com/robbyant/lingbot-depth
 cd lingbot-depth
 
-# Install the package (use 'python -m pip' to ensure correct environment)
-conda create -n lingbot-depth python=3.9
-conda activate lingbot-depth
-python -m pip install -e .
+# Create the project environment and install runtime dependencies
+uv sync --no-dev
 ```
 ## Quick Start
 
@@ -145,6 +143,26 @@ result/
 ```
 
 **Available examples:** 8 example scenes (0-7) included in `examples/` directory.
+
+## Evaluation
+
+The repository includes a unified evaluation pipeline for HAMMER, ClearPose,
+DREDS, and the official iBims evaluator. Install the optional dependencies and
+development tools with:
+
+```bash
+uv sync --extra evaluation --group dev
+```
+
+Run evaluations through the dataset subcommands:
+
+```bash
+uv run --extra evaluation python -m evaluation --help
+uv run --extra evaluation python -m evaluation hammer --help
+```
+
+See [evaluation/README.md](evaluation/README.md) for dataset manifests, complete
+commands, output layout, and smoke-test options.
 
 ## Method
 
@@ -303,4 +321,3 @@ For questions, discussions, or collaborations:
 
 - **Issues**: Open an [issue](https://github.com/robbyant/lingbot-depth/issues) on GitHub
 - **Email**: Contact Dr. [Bin Tan](https://https://icetttb.github.io/) (tanbin.tan@antgroup.com) or Dr. [Nan Xue](https://xuenan.net) (xuenan.xue@antgroup.com)
-
