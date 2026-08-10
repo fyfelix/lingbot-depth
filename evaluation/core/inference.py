@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict, List, Sequence
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from evaluation.core.io import normalize_prediction, read_gt_depth, read_raw_depth, read_rgb
+from evaluation.core.io import (
+    normalize_asdepth_prediction,
+    normalize_prediction,
+    read_gt_depth,
+    read_raw_depth,
+    read_rgb,
+)
 from evaluation.core.output import RunLayout, save_prediction
 from evaluation.core.types import EvaluationSample, LoadedSample, RunConfig
-from evaluation.core.visualization import save_visualization
+from evaluation.core.visualization import save_kitti_visualizations, save_visualization
 from evaluation.datasets.base import DatasetCollection
 from mdm.model.v2 import MDMModel
 
@@ -36,7 +43,7 @@ class InferenceInputDataset(Dataset):
             sample.raw_depth_path,
             sample.depth_scale,
             sample.min_depth,
-            sample.max_depth,
+            sample.raw_max_depth if sample.raw_max_depth is not None else sample.max_depth,
         )
         gt_depth = None
         if self.load_gt and sample.gt_depth_path is not None:
@@ -88,6 +95,14 @@ def run_inference(
 
     device = select_device(config.device)
     model = load_model(config.model_path, device)
+    if collection.name == "kitti" and config.save_visualizations:
+        for sample in collection.samples:
+            intrinsics_path = sample.metadata.get("intrinsics_path") or config.intrinsics_path
+            if not intrinsics_path:
+                raise ValueError(
+                    "KITTI visualization requires an intrinsics path in every manifest row "
+                    "or --intrinsics-path"
+                )
     dataset = InferenceInputDataset(
         collection.samples,
         load_gt=config.save_visualizations,
@@ -135,10 +150,11 @@ def run_inference(
             if "depth" not in output:
                 raise ValueError("MDMModel.infer did not return a depth prediction")
 
-            prediction = normalize_prediction(
-                output["depth"].detach().cpu().numpy(),
-                item.raw_depth.shape,
-            )
+            prediction_array = output["depth"].detach().cpu().numpy()
+            if collection.name == "kitti":
+                prediction = normalize_asdepth_prediction(prediction_array, item.raw_depth.shape)
+            else:
+                prediction = normalize_prediction(prediction_array, item.raw_depth.shape)
             if sample.expected_shape is not None and prediction.shape != sample.expected_shape:
                 raise ValueError(
                     f"Unexpected prediction shape for {sample.sample_id}: "
@@ -156,6 +172,28 @@ def run_inference(
                     config.visualization_min_depth,
                     config.visualization_max_depth,
                 )
+                if collection.name == "kitti":
+                    intrinsics_value = sample.metadata.get("intrinsics_path")
+                    intrinsics_path = (
+                        Path(intrinsics_value)
+                        if intrinsics_value
+                        else config.intrinsics_path
+                    )
+                    assert intrinsics_path is not None
+                    save_kitti_visualizations(
+                        layout.kitti_prediction_visualization_path(sample),
+                        layout.kitti_pointcloud_visualization_path(sample),
+                        item.rgb,
+                        prediction,
+                        intrinsics_path,
+                        config.visualization_min_depth,
+                        config.visualization_max_depth,
+                        config.pointcloud_rot_x_deg,
+                        config.pointcloud_rot_y_deg,
+                        config.pointcloud_knn_k,
+                        config.pointcloud_knn_std_ratio,
+                        config.disable_pointcloud_knn_filter,
+                    )
             written += 1
 
     return {

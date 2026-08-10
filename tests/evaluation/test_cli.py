@@ -22,6 +22,19 @@ def test_cli_exposes_dataset_subcommands():
     assert args.camera == "tof"
     assert args.save_visualizations is True
 
+    kitti = parser.parse_args(
+        [
+            "kitti",
+            "--manifest",
+            "data/kitti.jsonl",
+            "--model-path",
+            "model.pt",
+        ]
+    )
+    assert kitti.dataset == "kitti"
+    assert kitti.raw_max_depth == 80.0
+    assert kitti.pointcloud_knn_k == 16
+
 
 def test_evaluate_only_requires_explicit_run_dir():
     parser = build_parser()

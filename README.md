@@ -147,7 +147,7 @@ result/
 ## Evaluation
 
 The repository includes a unified evaluation pipeline for HAMMER, ClearPose,
-DREDS, and the official iBims evaluator. Install the optional dependencies and
+DREDS, iBims, and KITTI Depth Completion. Install the optional dependencies and
 development tools with:
 
 ```bash
