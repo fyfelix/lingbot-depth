@@ -89,7 +89,7 @@
         <div class="canvas-wrap"><canvas id="rgb-canvas"></canvas><div class="placeholder" id="rgb-placeholder">waiting for camera</div></div>
       </article>
       <article class="card">
-        <div class="card-head"><strong>Raw depth</strong><span>sensor</span></div>
+        <div class="card-head"><strong>Raw depth</strong><span id="raw-meta">sensor</span></div>
         <div class="canvas-wrap"><canvas id="raw-canvas"></canvas><div class="placeholder" id="raw-placeholder">waiting for depth</div></div>
       </article>
       <article class="card">
@@ -153,7 +153,8 @@
     const ctx = { rgb: canvases.rgb.getContext('2d'), raw: canvases.raw.getContext('2d'), pred: canvases.pred.getContext('2d') };
     const state = {
       ws: null, pendingHeader: null, status: {}, intrinsics: null,
-      width: 0, height: 0, color: null, raw: null, pred: null,
+      width: 0, height: 0, color: null, raw: null, pred: null, depthScaleM: 0.001,
+      rawViz: null, predViz: null,
       captureId: null, measureStart: null, measurements: [], predBase: null,
       cloud: { positions: null, colors: null, yaw: 0.08, pitch: -0.12, distance: 2.8, dragging: false, lastX: 0, lastY: 0 },
     };
@@ -176,7 +177,10 @@
       $('engine-value').textContent = state.status.engine || '--';
       $('device-value').textContent = state.status.device || '--';
       $('capture-value').textContent = state.status.capture ? state.status.capture.capture_id : '--';
-      $('infer-value').textContent = state.status.capture ? state.status.capture.status : 'idle';
+      const capture = state.status.capture;
+      $('infer-value').textContent = capture && capture.inference_elapsed_sec != null
+        ? `${Number(capture.inference_elapsed_sec).toFixed(3)} s`
+        : (capture ? capture.status : 'idle');
       $('frame-text').textContent = `frame ${state.status.frame_id ?? '--'}`;
       const readyToCapture = phase === 'preview' && state.status.model_status === 'ready' && state.status.frame_id != null;
       $('capture-btn').disabled = !readyToCapture;
@@ -234,17 +238,21 @@
 
     function consumePacket(header, buffer) {
       state.intrinsics = header.intrinsics;
+      state.depthScaleM = Number((header.raw_depth && header.raw_depth.scale_m) || header.depth_scale_m || 0.001);
       const colorSpec = header.color; state.height = colorSpec.shape[0]; state.width = colorSpec.shape[1];
       state.color = new Uint8Array(arrayView(buffer, colorSpec));
       state.raw = new Uint16Array(arrayView(buffer, header.raw_depth));
       state.pred = header.pred_depth ? new Float32Array(arrayView(buffer, header.pred_depth)) : null;
-      drawRgb(); drawDepth(state.raw, ctx.raw, false); $('rgb-placeholder').hidden = true; $('raw-placeholder').hidden = true;
+      state.rawViz = header.raw_depth.visualization || null;
+      state.predViz = header.pred_depth ? (header.pred_depth.visualization || null) : null;
+      drawRgb(); drawDepth(state.raw, ctx.raw, false, state.rawViz); $('rgb-placeholder').hidden = true; $('raw-placeholder').hidden = true;
       $('rgb-meta').textContent = `${state.width}×${state.height}`;
+      $('raw-meta').textContent = `sensor · ${formatDepthRange(state.rawViz)}`;
       if (header.type === 'capture_result') {
         state.captureId = header.capture_id; state.measurements = header.measurements || []; state.measureStart = null;
-        drawDepth(state.pred, ctx.pred, true); buildCloud(); renderMeasurements();
+        drawDepth(state.pred, ctx.pred, true, state.predViz); buildCloud(); renderMeasurements();
         $('pred-placeholder').hidden = true; $('cloud-placeholder').hidden = true;
-        canvases.pred.classList.add('ready'); $('measure-hint').textContent = 'click two points';
+        canvases.pred.classList.add('ready'); $('measure-hint').textContent = `${formatDepthRange(state.predViz)} · click two points`;
         $('clear-measure-btn').disabled = state.measurements.length === 0;
         $('infer-value').textContent = `${Number(header.inference_elapsed_sec || 0).toFixed(3)} s`;
       }
@@ -258,18 +266,26 @@
     }
     function turbo(t) {
       t = Math.max(0, Math.min(1, t));
-      const r = Math.max(0, Math.min(255, 255 * (1.5 - Math.abs(4*t - 3))));
-      const g = Math.max(0, Math.min(255, 255 * (1.5 - Math.abs(4*t - 2))));
-      const b = Math.max(0, Math.min(255, 255 * (1.5 - Math.abs(4*t - 1))));
-      return [r, g, b];
+      const r = 0.13572138 + t*(4.61539260 + t*(-42.66032258 + t*(132.13108234 + t*(-152.94239396 + t*59.28637943))));
+      const g = 0.09140261 + t*(2.19418839 + t*(4.84296658 + t*(-14.18503333 + t*(4.27729857 + t*2.82956604))));
+      const b = 0.10667330 + t*(12.64194608 + t*(-60.58204836 + t*(110.36276771 + t*(-89.90310912 + t*27.34824973))));
+      return [r, g, b].map(v => Math.round(255 * Math.max(0, Math.min(1, v))));
     }
-    function drawDepth(data, target, isFloat) {
+    function formatDepthRange(viz) {
+      if (!viz) return '--';
+      return `${Number(viz.min_m).toFixed(2)}–${Number(viz.max_m).toFixed(2)} m`;
+    }
+    function drawDepth(data, target, isFloat, viz) {
       const canvas = target.canvas; setCanvasSize(canvas); const image = target.createImageData(state.width, state.height);
-      const maxDepth = Number($('depth-max').value);
+      const userMax = Number($('depth-max').value);
+      const minDepth = Number.isFinite(Number(viz && viz.min_m)) ? Number(viz.min_m) : 0.1;
+      const configuredMax = Number.isFinite(Number(viz && viz.max_m)) ? Number(viz.max_m) : userMax;
+      const maxDepth = Math.max(minDepth + 1e-6, Math.min(userMax, configuredMax));
+      const validMax = Math.min(userMax, Number.isFinite(Number(viz && viz.valid_max_m)) ? Number(viz.valid_max_m) : userMax);
       for (let i = 0, j = 0; i < data.length; i++, j += 4) {
-        const z = isFloat ? data[i] : data[i] * 0.001;
-        if (!Number.isFinite(z) || z <= 0 || z > maxDepth) { image.data[j+3] = 255; continue; }
-        const c = turbo(1 - z / maxDepth); image.data[j] = c[0]; image.data[j+1] = c[1]; image.data[j+2] = c[2]; image.data[j+3] = 255;
+        const z = isFloat ? data[i] : data[i] * state.depthScaleM;
+        if (!Number.isFinite(z) || z <= 0 || z > validMax) { image.data[j+3] = 255; continue; }
+        const c = turbo((z - minDepth) / (maxDepth - minDepth)); image.data[j] = c[0]; image.data[j+1] = c[1]; image.data[j+2] = c[2]; image.data[j+3] = 255;
       }
       target.putImageData(image, 0, 0); if (isFloat) state.predBase = image;
     }
@@ -361,10 +377,10 @@
     $('clear-measure-btn').onclick=async()=>{ if (!state.captureId) return; await api(`/api/captures/${state.captureId}/measurements`,{method:'DELETE'}); state.measurements=[]; state.measureStart=null; renderMeasurements(); };
 
     $('capture-btn').onclick=async()=>{ try { const result=await api('/api/capture',{method:'POST'}); state.captureId=result.capture_id; } catch(e){ $('notice').textContent=e.message; } };
-    $('recapture-btn').onclick=async()=>{ try { await api('/api/recapture',{method:'POST'}); state.captureId=null; state.pred=null; state.predBase=null; state.measurements=[]; state.measureStart=null; pointCount=0; $('pred-placeholder').hidden=false; $('pred-placeholder').textContent='inference idle'; $('cloud-placeholder').hidden=false; $('measure-readout').textContent='--'; renderMeasurements(); } catch(e){ $('notice').textContent=e.message; } };
+    $('recapture-btn').onclick=async()=>{ try { await api('/api/recapture',{method:'POST'}); state.captureId=null; state.pred=null; state.predViz=null; state.predBase=null; state.measurements=[]; state.measureStart=null; pointCount=0; $('pred-placeholder').hidden=false; $('pred-placeholder').textContent='inference idle'; $('cloud-placeholder').hidden=false; $('measure-readout').textContent='--'; renderMeasurements(); } catch(e){ $('notice').textContent=e.message; } };
     $('retry-btn').onclick=async()=>{ if(state.captureId) await api(`/api/captures/${state.captureId}/retry`,{method:'POST'}); };
     $('quit-btn').onclick=async()=>{ await api('/api/quit',{method:'POST'}); };
-    $('depth-max').oninput=()=>{ $('depth-max-out').textContent=`${Number($('depth-max').value).toFixed(1)} m`; if(state.raw)drawDepth(state.raw,ctx.raw,false); if(state.pred){drawDepth(state.pred,ctx.pred,true);buildCloud();renderMeasurements();} };
+    $('depth-max').oninput=()=>{ $('depth-max-out').textContent=`${Number($('depth-max').value).toFixed(1)} m`; if(state.raw)drawDepth(state.raw,ctx.raw,false,state.rawViz); if(state.pred){drawDepth(state.pred,ctx.pred,true,state.predViz);buildCloud();renderMeasurements();} };
     $('point-size').oninput=()=>{ $('point-size-out').textContent=Number($('point-size').value).toFixed(1); };
     $('point-stride').oninput=()=>{ $('point-stride-out').textContent=$('point-stride').value; buildCloud(); };
     connectWs();

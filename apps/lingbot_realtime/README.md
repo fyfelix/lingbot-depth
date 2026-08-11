@@ -17,6 +17,17 @@ Open <http://127.0.0.1:8000>. The fixture source generates a deterministic anima
 Capture, inference state transitions, depth visualization, point-cloud rendering, and 2D metric
 measurement all remain available.
 
+Depth visualization follows the AS-Depth realtime policy while keeping the underlying arrays in
+meters: raw sensor depth uses the stable `--vis-min`/`--vis-max` range (`0.1–5.0 m` by default),
+and predicted depth uses the valid-pixel `--pred-vis-percentile-min`/
+`--pred-vis-percentile-max` range (`1–99%` by default). Invalid, non-finite, and
+`--max-depth`-exceeding values render black. These display settings do not change inference,
+point-cloud geometry, or 2D measurement values.
+
+Before inference, a separate preprocessing step copies the sensor depth and replaces non-finite,
+non-positive, and `--max-depth`-exceeding samples with zero, matching the AS-Depth D435 input
+contract. The original aligned sensor depth remains unchanged for preview and persistence.
+
 Run tests with:
 
 ```bash

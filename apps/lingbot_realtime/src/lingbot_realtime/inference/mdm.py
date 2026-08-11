@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 
 from lingbot_realtime.domain import InferenceResult, RGBDFrame
+from lingbot_realtime.inference.preprocessing import sanitize_metric_depth
 
 
 class MDMInferenceEngine:
@@ -67,7 +68,8 @@ class MDMInferenceEngine:
             .unsqueeze(0)
             .to(self._device)
         )
-        depth = torch.from_numpy(frame.depth_m).unsqueeze(0).to(self._device)
+        depth_input = sanitize_metric_depth(frame.depth_m, self.max_depth_m)
+        depth = torch.from_numpy(depth_input).unsqueeze(0).to(self._device)
         intrinsics = (
             torch.from_numpy(frame.intrinsics.normalized_matrix()).unsqueeze(0).to(self._device)
         )

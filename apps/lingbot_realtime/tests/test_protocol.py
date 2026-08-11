@@ -20,6 +20,15 @@ def test_preview_payload_has_typed_arrays_and_offsets() -> None:
     raw = header["raw_depth"]
     assert color["dtype"] == "uint8"
     assert raw["dtype"] == "uint16"
+    assert raw["unit"] == "device_unit"
+    assert raw["scale_m"] == frame.depth_scale_m
+    assert raw["visualization"] == {
+        "min_m": 0.1,
+        "max_m": 5.0,
+        "valid_max_m": 6.0,
+        "colormap": "turbo",
+        "range_mode": "fixed",
+    }
     assert (
         np.frombuffer(
             payload,
@@ -43,4 +52,10 @@ def test_capture_payload_includes_prediction() -> None:
     header, payload = pack_capture(record, revision=8, phase="ready")
     assert header["type"] == "capture_result"
     assert header["pred_depth"]["dtype"] == "float32"
+    assert header["pred_depth"]["unit"] == "meter"
+    pred_viz = header["pred_depth"]["visualization"]
+    assert pred_viz["range_mode"] == "percentile"
+    assert pred_viz["percentile"] == {"min": 1.0, "max": 99.0}
+    assert pred_viz["min_m"] == 1.0
+    assert pred_viz["max_m"] > pred_viz["min_m"]
     assert len(payload) == header["payload_bytes"]

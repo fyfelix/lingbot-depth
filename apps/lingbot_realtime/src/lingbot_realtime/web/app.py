@@ -127,7 +127,12 @@ def create_app(runtime: RuntimeController) -> FastAPI:
                 now = asyncio.get_running_loop().time()
                 if phase == "preview" and update.frame is not None and now >= next_preview_at:
                     payload_key = ("preview", update.frame.frame_id)
-                    packet = pack_preview(update.frame, update.revision, phase)
+                    packet = pack_preview(
+                        update.frame,
+                        update.revision,
+                        phase,
+                        depth_viz=runtime.config.depth_viz_config(),
+                    )
                     next_preview_at = now + 1.0 / runtime.config.preview_fps
                 elif (
                     phase == "ready"
@@ -136,7 +141,12 @@ def create_app(runtime: RuntimeController) -> FastAPI:
                 ):
                     payload_key = ("capture", update.capture.capture_id)
                     if payload_key != last_payload_key:
-                        packet = pack_capture(update.capture, update.revision, phase)
+                        packet = pack_capture(
+                            update.capture,
+                            update.revision,
+                            phase,
+                            depth_viz=runtime.config.depth_viz_config(),
+                        )
 
                 if packet is None:
                     await websocket.send_json(

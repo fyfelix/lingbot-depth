@@ -9,21 +9,21 @@ import numpy as np
 import trimesh
 
 from lingbot_realtime.domain import CaptureRecord
-
-
-def _colorize_depth(depth_m: np.ndarray, max_depth_m: float) -> np.ndarray:
-    valid = np.isfinite(depth_m) & (depth_m > 0) & (depth_m <= max_depth_m)
-    scaled = np.clip(depth_m / max_depth_m, 0.0, 1.0)
-    image = cv2.applyColorMap((scaled * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
-    image[~valid] = 0
-    return image
+from lingbot_realtime.visualization import DepthVisualizationConfig, colorize_depth_fast
 
 
 class PersistenceService:
-    def __init__(self, enabled: bool, output_root: Path, max_depth_m: float) -> None:
+    def __init__(
+        self,
+        enabled: bool,
+        output_root: Path,
+        max_depth_m: float,
+        depth_viz: DepthVisualizationConfig | None = None,
+    ) -> None:
         self.enabled = bool(enabled)
         self.output_root = Path(output_root)
         self.max_depth_m = float(max_depth_m)
+        self.depth_viz = depth_viz or DepthVisualizationConfig(valid_max_depth_m=self.max_depth_m)
 
     def capture_dir(self, capture_id: str) -> Path:
         return self.output_root / capture_id
@@ -38,13 +38,25 @@ class PersistenceService:
         cv2.imwrite(str(root / "rgb.png"), cv2.cvtColor(frame.color_rgb, cv2.COLOR_RGB2BGR))
         np.save(root / "raw_depth.npy", frame.depth_m.astype(np.float32), allow_pickle=False)
         np.save(root / "pred_depth.npy", result.pred_depth_m.astype(np.float32), allow_pickle=False)
+        raw_range = self.depth_viz.raw_range()
+        pred_range = self.depth_viz.predicted_range(result.pred_depth_m)
         cv2.imwrite(
             str(root / "raw_depth_vis.png"),
-            _colorize_depth(frame.depth_m, self.max_depth_m),
+            colorize_depth_fast(
+                frame.depth_m,
+                vmin=raw_range.min_m,
+                vmax=raw_range.max_m,
+                valid_max_m=self.depth_viz.valid_max_depth_m,
+            ),
         )
         cv2.imwrite(
             str(root / "pred_depth_vis.png"),
-            _colorize_depth(result.pred_depth_m, self.max_depth_m),
+            colorize_depth_fast(
+                result.pred_depth_m,
+                vmin=pred_range.min_m,
+                vmax=pred_range.max_m,
+                valid_max_m=self.depth_viz.valid_max_depth_m,
+            ),
         )
         valid = (
             np.isfinite(result.points).all(axis=-1)
@@ -62,6 +74,11 @@ class PersistenceService:
                 "engine": engine_name,
                 "device": device_name,
                 "depth_unit": "meter",
+                "depth_visualization": {
+                    "config": self.depth_viz.to_dict(),
+                    "raw": raw_range.to_dict(),
+                    "predicted": pred_range.to_dict(),
+                },
             },
         )
         self.save_measurements(record)

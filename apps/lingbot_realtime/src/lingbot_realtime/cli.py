@@ -29,6 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--max-depth", type=float, default=6.0)
+    parser.add_argument("--vis-min", type=float, default=0.1)
+    parser.add_argument("--vis-max", type=float, default=5.0)
+    parser.add_argument("--pred-vis-percentile-min", type=float, default=1.0)
+    parser.add_argument("--pred-vis-percentile-max", type=float, default=99.0)
     parser.add_argument("--resolution-level", type=int, default=9)
     parser.add_argument("--no-mask", action="store_true")
     parser.add_argument("--bind", default="127.0.0.1")
@@ -51,6 +55,10 @@ def build_config(argv: Sequence[str] | None = None) -> AppConfig:
         height=args.height,
         fps=args.fps,
         max_depth_m=args.max_depth,
+        vis_min_m=args.vis_min,
+        vis_max_m=args.vis_max,
+        pred_vis_percentile_min=args.pred_vis_percentile_min,
+        pred_vis_percentile_max=args.pred_vis_percentile_max,
         resolution_level=args.resolution_level,
         apply_mask=not args.no_mask,
         bind=args.bind,
@@ -71,7 +79,7 @@ def build_runtime(config: AppConfig) -> RuntimeController:
         source = RealSenseFrameSource(config.width, config.height, config.fps)
 
     if config.inference_engine == "mock":
-        engine = MockInferenceEngine()
+        engine = MockInferenceEngine(max_depth_m=config.max_depth_m)
     else:
         assert config.model_path is not None
         engine = MDMInferenceEngine(
@@ -81,7 +89,12 @@ def build_runtime(config: AppConfig) -> RuntimeController:
             apply_mask=config.apply_mask,
             max_depth_m=config.max_depth_m,
         )
-    persistence = PersistenceService(config.save_results, config.output_root, config.max_depth_m)
+    persistence = PersistenceService(
+        config.save_results,
+        config.output_root,
+        config.max_depth_m,
+        depth_viz=config.depth_viz_config(),
+    )
     return RuntimeController(config, source, engine, persistence)
 
 

@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from lingbot_realtime.domain import InferenceResult, RGBDFrame
+from lingbot_realtime.inference.preprocessing import sanitize_metric_depth
 
 
 def depth_to_points(depth_m: np.ndarray, frame: RGBDFrame) -> np.ndarray:
@@ -30,6 +31,9 @@ def depth_to_points(depth_m: np.ndarray, frame: RGBDFrame) -> np.ndarray:
 class MockInferenceEngine:
     """Fast deterministic depth completion used by macOS and CI tests."""
 
+    def __init__(self, max_depth_m: float = 6.0) -> None:
+        self.max_depth_m = float(max_depth_m)
+
     @property
     def name(self) -> str:
         return "mock"
@@ -43,7 +47,7 @@ class MockInferenceEngine:
 
     def infer(self, frame: RGBDFrame) -> InferenceResult:
         started = time.perf_counter()
-        raw = frame.depth_m.astype(np.float32, copy=False)
+        raw = sanitize_metric_depth(frame.depth_m, self.max_depth_m)
         valid = np.isfinite(raw) & (raw > 0)
         if valid.any():
             filled = np.where(valid, raw, float(np.median(raw[valid]))).astype(np.float32)
