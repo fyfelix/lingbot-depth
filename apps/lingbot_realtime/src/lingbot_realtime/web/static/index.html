@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LingBot Realtime</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07090d;
+      --panel: #11151c;
+      --panel2: #171c25;
+      --line: rgba(255,255,255,.12);
+      --text: #eef2f7;
+      --muted: #8f9baa;
+      --accent: #79d7ff;
+      --ok: #75e6a4;
+      --warn: #ffca75;
+      --bad: #ff8e9b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+    body { font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button, input { font: inherit; }
+    button {
+      min-height: 36px; padding: 7px 13px; border: 1px solid var(--line);
+      border-radius: 7px; color: var(--text); background: #1b222d; cursor: pointer;
+    }
+    button:hover:not(:disabled) { border-color: rgba(121,215,255,.55); }
+    button:disabled { opacity: .42; cursor: not-allowed; }
+    button.primary { color: #02131b; background: var(--accent); border-color: var(--accent); font-weight: 700; }
+    button.danger { color: var(--bad); }
+    .topbar {
+      position: sticky; top: 0; z-index: 10; display: flex; gap: 10px; align-items: center;
+      padding: 11px 14px; border-bottom: 1px solid var(--line); background: rgba(7,9,13,.92);
+      backdrop-filter: blur(14px);
+    }
+    .brand { font-weight: 750; letter-spacing: .01em; }
+    .brand small { margin-left: 8px; color: var(--muted); font: 11px var(--mono); font-weight: 400; }
+    .pill { display: inline-flex; gap: 7px; align-items: center; padding: 5px 9px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); font: 12px var(--mono); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #6b7280; }
+    .pill.ok { color: var(--ok); } .pill.ok .dot { background: var(--ok); }
+    .pill.warn { color: var(--warn); } .pill.warn .dot { background: var(--warn); }
+    .pill.bad { color: var(--bad); } .pill.bad .dot { background: var(--bad); }
+    .spacer { flex: 1; }
+    main { padding: 14px; display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 14px; }
+    .views { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; align-content: start; }
+    .card { min-width: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--panel); }
+    .card-head { display: flex; justify-content: space-between; align-items: center; min-height: 37px; padding: 8px 11px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .card-head strong { color: var(--text); font-size: 13px; }
+    .canvas-wrap { position: relative; aspect-ratio: 4/3; background: #020304; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #pred-canvas.ready { cursor: crosshair; }
+    .placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #697482; font: 12px var(--mono); pointer-events: none; }
+    .side { display: grid; gap: 12px; align-content: start; }
+    .section { padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+    .section h2 { margin: 0 0 10px; color: var(--muted); font-size: 11px; letter-spacing: .09em; text-transform: uppercase; }
+    .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .status-grid { display: grid; grid-template-columns: 1fr auto; gap: 7px 10px; font: 12px var(--mono); }
+    .status-grid .k { color: var(--muted); }
+    .notice { margin-top: 10px; color: var(--warn); font: 12px var(--mono); overflow-wrap: anywhere; }
+    .notice.error { color: var(--bad); }
+    .control { display: grid; gap: 5px; margin-top: 10px; }
+    .control-row { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+    input[type=range] { width: 100%; accent-color: var(--accent); }
+    .measure-help { color: var(--muted); font-size: 12px; }
+    .measure-list { display: grid; gap: 7px; margin-top: 10px; }
+    .measure-item { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; font: 12px var(--mono); }
+    .measure-item button { min-height: 27px; padding: 2px 8px; }
+    .readout { color: var(--accent); font: 19px var(--mono); }
+    @media (max-width: 1000px) { main { grid-template-columns: 1fr; } .side { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+    @media (max-width: 720px) { .views, .side { grid-template-columns: 1fr; } .topbar { flex-wrap: wrap; } .brand { width: 100%; } main { padding: 9px; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">LingBot Realtime <small>snapshot RGB-D measure</small></div>
+    <div class="pill" id="camera-pill"><span class="dot"></span><span id="camera-text">starting</span></div>
+    <div class="pill" id="model-pill"><span class="dot"></span><span id="model-text">loading</span></div>
+    <div class="pill" id="phase-pill"><span class="dot"></span><span id="phase-text">starting</span></div>
+    <div class="spacer"></div>
+    <span id="frame-text" class="pill">frame --</span>
+  </header>
+  <main>
+    <section class="views">
+      <article class="card">
+        <div class="card-head"><strong>RGB</strong><span id="rgb-meta">--</span></div>
+        <div class="canvas-wrap"><canvas id="rgb-canvas"></canvas><div class="placeholder" id="rgb-placeholder">waiting for camera</div></div>
+      </article>
+      <article class="card">
+        <div class="card-head"><strong>Raw depth</strong><span>sensor</span></div>
+        <div class="canvas-wrap"><canvas id="raw-canvas"></canvas><div class="placeholder" id="raw-placeholder">waiting for depth</div></div>
+      </article>
+      <article class="card">
+        <div class="card-head"><strong>Predicted depth</strong><span id="measure-hint">capture first</span></div>
+        <div class="canvas-wrap"><canvas id="pred-canvas"></canvas><div class="placeholder" id="pred-placeholder">inference idle</div></div>
+      </article>
+      <article class="card">
+        <div class="card-head"><strong>Predicted point cloud</strong><span>drag / wheel</span></div>
+        <div class="canvas-wrap"><canvas id="cloud-canvas"></canvas><div class="placeholder" id="cloud-placeholder">capture first</div></div>
+      </article>
+    </section>
+    <aside class="side">
+      <section class="section">
+        <h2>Session</h2>
+        <div class="buttons">
+          <button class="primary" id="capture-btn" disabled>抓拍并推理</button>
+          <button id="recapture-btn" disabled>重新抓拍</button>
+          <button id="retry-btn" disabled>重试推理</button>
+          <button class="danger" id="quit-btn">退出服务</button>
+        </div>
+        <div class="notice" id="notice">starting…</div>
+      </section>
+      <section class="section">
+        <h2>Status</h2>
+        <div class="status-grid">
+          <span class="k">Source</span><span id="source-value">--</span>
+          <span class="k">Engine</span><span id="engine-value">--</span>
+          <span class="k">Device</span><span id="device-value">--</span>
+          <span class="k">Capture</span><span id="capture-value">--</span>
+          <span class="k">Inference</span><span id="infer-value">--</span>
+        </div>
+      </section>
+      <section class="section">
+        <h2>Depth display</h2>
+        <div class="control">
+          <div class="control-row"><label for="depth-max">Max depth</label><output id="depth-max-out">6.0 m</output></div>
+          <input id="depth-max" type="range" min="0.5" max="10" step="0.1" value="6">
+        </div>
+        <div class="control">
+          <div class="control-row"><label for="point-size">Point size</label><output id="point-size-out">2.0</output></div>
+          <input id="point-size" type="range" min="1" max="8" step="0.25" value="2">
+        </div>
+        <div class="control">
+          <div class="control-row"><label for="point-stride">Point stride</label><output id="point-stride-out">2</output></div>
+          <input id="point-stride" type="range" min="1" max="10" step="1" value="2">
+        </div>
+      </section>
+      <section class="section">
+        <h2>2D Measure</h2>
+        <div class="readout" id="measure-readout">--</div>
+        <p class="measure-help" id="measure-help">预测结果就绪后，在 Predicted depth 上依次点击两个点。</p>
+        <button id="clear-measure-btn" disabled>清空测量</button>
+        <div class="measure-list" id="measure-list"></div>
+      </section>
+    </aside>
+  </main>
+  <script>
+  (() => {
+    const $ = (id) => document.getElementById(id);
+    const canvases = { rgb: $('rgb-canvas'), raw: $('raw-canvas'), pred: $('pred-canvas'), cloud: $('cloud-canvas') };
+    const ctx = { rgb: canvases.rgb.getContext('2d'), raw: canvases.raw.getContext('2d'), pred: canvases.pred.getContext('2d') };
+    const state = {
+      ws: null, pendingHeader: null, status: {}, intrinsics: null,
+      width: 0, height: 0, color: null, raw: null, pred: null,
+      captureId: null, measureStart: null, measurements: [], predBase: null,
+      cloud: { positions: null, colors: null, yaw: 0.08, pitch: -0.12, distance: 2.8, dragging: false, lastX: 0, lastY: 0 },
+    };
+
+    function setPill(id, textId, kind, text) {
+      const pill = $(id); pill.className = `pill ${kind || ''}`; $(textId).textContent = text;
+    }
+    function phaseKind(phase) {
+      if (phase === 'ready' || phase === 'preview') return 'ok';
+      if (phase === 'error' || phase === 'stopped') return 'bad';
+      return 'warn';
+    }
+    function applyStatus(status) {
+      state.status = status || {};
+      const phase = state.status.phase || 'starting';
+      setPill('camera-pill', 'camera-text', state.status.camera_status === 'running' ? 'ok' : (state.status.camera_status === 'error' ? 'bad' : 'warn'), state.status.camera_status || 'idle');
+      setPill('model-pill', 'model-text', state.status.model_status === 'ready' ? 'ok' : (state.status.model_status === 'error' ? 'bad' : 'warn'), state.status.model_status || 'idle');
+      setPill('phase-pill', 'phase-text', phaseKind(phase), phase);
+      $('source-value').textContent = state.status.source || '--';
+      $('engine-value').textContent = state.status.engine || '--';
+      $('device-value').textContent = state.status.device || '--';
+      $('capture-value').textContent = state.status.capture ? state.status.capture.capture_id : '--';
+      $('infer-value').textContent = state.status.capture ? state.status.capture.status : 'idle';
+      $('frame-text').textContent = `frame ${state.status.frame_id ?? '--'}`;
+      const readyToCapture = phase === 'preview' && state.status.model_status === 'ready' && state.status.frame_id != null;
+      $('capture-btn').disabled = !readyToCapture;
+      $('recapture-btn').disabled = !['ready', 'error'].includes(phase);
+      $('retry-btn').disabled = !(phase === 'error' && state.status.capture && state.status.capture.status === 'error');
+      const errors = [state.status.camera_error, state.status.model_error, state.status.capture && state.status.capture.error].filter(Boolean);
+      const notice = $('notice');
+      notice.className = `notice ${errors.length ? 'error' : ''}`;
+      if (errors.length) notice.textContent = errors.join(' | ');
+      else if (phase === 'preview') notice.textContent = state.status.model_status === 'ready' ? '实时预览中；当前不进行推理。' : '相机预览中；模型正在加载。';
+      else if (phase === 'inferencing') notice.textContent = '场景已冻结，正在执行单次深度推理…';
+      else if (phase === 'ready') notice.textContent = '结果已固定，可以查看点云并进行 2D 测量。';
+      else notice.textContent = phase;
+      if (phase !== 'ready') {
+        canvases.pred.classList.remove('ready');
+        $('measure-hint').textContent = phase === 'inferencing' ? 'inferencing…' : 'capture first';
+      }
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || `${response.status} ${response.statusText}`);
+      return body;
+    }
+
+    function connectWs() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${proto}//${location.host}/ws/preview`);
+      ws.binaryType = 'arraybuffer'; state.ws = ws;
+      ws.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'hello' || msg.type === 'state') applyStatus(msg.status);
+          else if (msg.type === 'preview_frame' || msg.type === 'capture_result') state.pendingHeader = msg;
+          return;
+        }
+        const header = state.pendingHeader; state.pendingHeader = null;
+        if (!header) return;
+        consumePacket(header, event.data);
+        ws.send(JSON.stringify({ type: 'ack', revision: header.revision }));
+      };
+      ws.onclose = () => { if (!state.status.quit_requested) setTimeout(connectWs, 900); };
+      ws.onerror = () => ws.close();
+    }
+
+    function arrayView(buffer, spec) {
+      if (!spec) return null;
+      const length = spec.shape.reduce((a, b) => a * b, 1);
+      if (spec.dtype === 'uint8') return new Uint8Array(buffer, spec.offset, length);
+      if (spec.dtype === 'uint16') return new Uint16Array(buffer, spec.offset, length);
+      if (spec.dtype === 'float32') return new Float32Array(buffer, spec.offset, length);
+      throw new Error(`unsupported dtype ${spec.dtype}`);
+    }
+
+    function consumePacket(header, buffer) {
+      state.intrinsics = header.intrinsics;
+      const colorSpec = header.color; state.height = colorSpec.shape[0]; state.width = colorSpec.shape[1];
+      state.color = new Uint8Array(arrayView(buffer, colorSpec));
+      state.raw = new Uint16Array(arrayView(buffer, header.raw_depth));
+      state.pred = header.pred_depth ? new Float32Array(arrayView(buffer, header.pred_depth)) : null;
+      drawRgb(); drawDepth(state.raw, ctx.raw, false); $('rgb-placeholder').hidden = true; $('raw-placeholder').hidden = true;
+      $('rgb-meta').textContent = `${state.width}×${state.height}`;
+      if (header.type === 'capture_result') {
+        state.captureId = header.capture_id; state.measurements = header.measurements || []; state.measureStart = null;
+        drawDepth(state.pred, ctx.pred, true); buildCloud(); renderMeasurements();
+        $('pred-placeholder').hidden = true; $('cloud-placeholder').hidden = true;
+        canvases.pred.classList.add('ready'); $('measure-hint').textContent = 'click two points';
+        $('clear-measure-btn').disabled = state.measurements.length === 0;
+        $('infer-value').textContent = `${Number(header.inference_elapsed_sec || 0).toFixed(3)} s`;
+      }
+    }
+
+    function setCanvasSize(canvas) { if (canvas.width !== state.width || canvas.height !== state.height) { canvas.width = state.width; canvas.height = state.height; } }
+    function drawRgb() {
+      setCanvasSize(canvases.rgb); const image = ctx.rgb.createImageData(state.width, state.height);
+      for (let i = 0, j = 0; i < state.color.length; i += 3, j += 4) { image.data[j] = state.color[i]; image.data[j+1] = state.color[i+1]; image.data[j+2] = state.color[i+2]; image.data[j+3] = 255; }
+      ctx.rgb.putImageData(image, 0, 0);
+    }
+    function turbo(t) {
+      t = Math.max(0, Math.min(1, t));
+      const r = Math.max(0, Math.min(255, 255 * (1.5 - Math.abs(4*t - 3))));
+      const g = Math.max(0, Math.min(255, 255 * (1.5 - Math.abs(4*t - 2))));
+      const b = Math.max(0, Math.min(255, 255 * (1.5 - Math.abs(4*t - 1))));
+      return [r, g, b];
+    }
+    function drawDepth(data, target, isFloat) {
+      const canvas = target.canvas; setCanvasSize(canvas); const image = target.createImageData(state.width, state.height);
+      const maxDepth = Number($('depth-max').value);
+      for (let i = 0, j = 0; i < data.length; i++, j += 4) {
+        const z = isFloat ? data[i] : data[i] * 0.001;
+        if (!Number.isFinite(z) || z <= 0 || z > maxDepth) { image.data[j+3] = 255; continue; }
+        const c = turbo(1 - z / maxDepth); image.data[j] = c[0]; image.data[j+1] = c[1]; image.data[j+2] = c[2]; image.data[j+3] = 255;
+      }
+      target.putImageData(image, 0, 0); if (isFloat) state.predBase = image;
+    }
+
+    const gl = canvases.cloud.getContext('webgl2', { antialias: true });
+    let cloudProgram = null, posBuffer = null, colorBuffer = null, pointCount = 0;
+    function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+    function initCloud() {
+      const vs = `#version 300 es
+        in vec3 aPos; in vec3 aColor; out vec3 vColor;
+        uniform float uYaw, uPitch, uDistance, uAspect, uPointSize, uCenterZ;
+        void main(){
+          vec3 p=vec3(aPos.x,-aPos.y,aPos.z-uCenterZ);
+          float cy=cos(uYaw), sy=sin(uYaw), cp=cos(uPitch), sp=sin(uPitch);
+          p=vec3(cy*p.x+sy*p.z,p.y,-sy*p.x+cy*p.z);
+          p=vec3(p.x,cp*p.y-sp*p.z,sp*p.y+cp*p.z);
+          vec3 v=vec3(p.x,p.y,-uDistance-p.z);
+          float n=.05,f=30.0,q=(f+n)/(n-f),qn=(2.0*f*n)/(n-f);
+          gl_Position=vec4(v.x*1.65/uAspect,v.y*1.65,q*v.z+qn,-v.z);
+          gl_PointSize=uPointSize; vColor=aColor;
+        }`;
+      const fs = `#version 300 es
+        precision mediump float; in vec3 vColor; out vec4 outColor;
+        void main(){ vec2 d=gl_PointCoord-vec2(.5); if(dot(d,d)>.25) discard; outColor=vec4(vColor,1.0); }`;
+      cloudProgram = gl.createProgram(); gl.attachShader(cloudProgram, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(cloudProgram, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(cloudProgram);
+      if (!gl.getProgramParameter(cloudProgram, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(cloudProgram));
+      posBuffer = gl.createBuffer(); colorBuffer = gl.createBuffer(); gl.enable(gl.DEPTH_TEST);
+    }
+    initCloud();
+    function buildCloud() {
+      if (!state.pred || !state.intrinsics) return;
+      const stride = Number($('point-stride').value), maxDepth = Number($('depth-max').value), intr = state.intrinsics;
+      const positions = [], colors = []; let sumZ = 0;
+      for (let y = 0; y < state.height; y += stride) for (let x = 0; x < state.width; x += stride) {
+        const i = y * state.width + x, z = state.pred[i]; if (!Number.isFinite(z) || z <= 0 || z > maxDepth) continue;
+        positions.push(((x+.5-intr.ppx)/intr.fx)*z, ((y+.5-intr.ppy)/intr.fy)*z, z); sumZ += z;
+        const ci = i*3; colors.push(state.color[ci]/255, state.color[ci+1]/255, state.color[ci+2]/255);
+      }
+      state.cloud.positions = new Float32Array(positions); state.cloud.colors = new Float32Array(colors); state.cloud.centerZ = pointCount ? sumZ / pointCount : 1.5;
+      pointCount = positions.length / 3; state.cloud.centerZ = pointCount ? sumZ / pointCount : 1.5;
+      gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer); gl.bufferData(gl.ARRAY_BUFFER, state.cloud.positions, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer); gl.bufferData(gl.ARRAY_BUFFER, state.cloud.colors, gl.STATIC_DRAW);
+    }
+    function resizeCloud() { const dpr = Math.min(devicePixelRatio || 1, 2), rect = canvases.cloud.getBoundingClientRect(); const w = Math.max(1, Math.round(rect.width*dpr)), h = Math.max(1, Math.round(rect.height*dpr)); if (canvases.cloud.width !== w || canvases.cloud.height !== h) { canvases.cloud.width=w; canvases.cloud.height=h; } }
+    function renderCloud() {
+      resizeCloud(); gl.viewport(0,0,canvases.cloud.width,canvases.cloud.height); gl.clearColor(.008,.012,.018,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      if (pointCount) {
+        gl.useProgram(cloudProgram); const pLoc=gl.getAttribLocation(cloudProgram,'aPos'), cLoc=gl.getAttribLocation(cloudProgram,'aColor');
+        gl.bindBuffer(gl.ARRAY_BUFFER,posBuffer); gl.enableVertexAttribArray(pLoc); gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,0,0);
+        gl.bindBuffer(gl.ARRAY_BUFFER,colorBuffer); gl.enableVertexAttribArray(cLoc); gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,0,0);
+        gl.uniform1f(gl.getUniformLocation(cloudProgram,'uYaw'),state.cloud.yaw); gl.uniform1f(gl.getUniformLocation(cloudProgram,'uPitch'),state.cloud.pitch);
+        gl.uniform1f(gl.getUniformLocation(cloudProgram,'uDistance'),state.cloud.distance); gl.uniform1f(gl.getUniformLocation(cloudProgram,'uAspect'),canvases.cloud.width/canvases.cloud.height);
+        gl.uniform1f(gl.getUniformLocation(cloudProgram,'uPointSize'),Number($('point-size').value)*(devicePixelRatio||1)); gl.uniform1f(gl.getUniformLocation(cloudProgram,'uCenterZ'),state.cloud.centerZ||1.5);
+        gl.drawArrays(gl.POINTS,0,pointCount);
+      }
+      requestAnimationFrame(renderCloud);
+    }
+    requestAnimationFrame(renderCloud);
+    canvases.cloud.addEventListener('pointerdown', e => { state.cloud.dragging=true; state.cloud.lastX=e.clientX; state.cloud.lastY=e.clientY; canvases.cloud.setPointerCapture(e.pointerId); });
+    canvases.cloud.addEventListener('pointermove', e => { if (!state.cloud.dragging) return; state.cloud.yaw += (e.clientX-state.cloud.lastX)*.008; state.cloud.pitch = Math.max(-1.45,Math.min(1.45,state.cloud.pitch+(e.clientY-state.cloud.lastY)*.008)); state.cloud.lastX=e.clientX; state.cloud.lastY=e.clientY; });
+    canvases.cloud.addEventListener('pointerup', e => { state.cloud.dragging=false; try { canvases.cloud.releasePointerCapture(e.pointerId); } catch (_) {} });
+    canvases.cloud.addEventListener('wheel', e => { e.preventDefault(); state.cloud.distance=Math.max(.4,Math.min(10,state.cloud.distance+e.deltaY*.002)); }, { passive:false });
+
+    function formatDistance(m) { return m < 1 ? `${(m*100).toFixed(1)} cm` : `${m.toFixed(3)} m`; }
+    function redrawPred() {
+      if (!state.predBase) return; ctx.pred.putImageData(state.predBase,0,0); ctx.pred.lineWidth=Math.max(2,state.width/320); ctx.pred.font=`${Math.max(13,state.width/42)}px ui-monospace`;
+      for (const m of state.measurements) {
+        const a=m.start, b=m.end; ctx.pred.strokeStyle='#79d7ff'; ctx.pred.fillStyle='#79d7ff'; ctx.pred.beginPath(); ctx.pred.moveTo(a.sampled_x,a.sampled_y); ctx.pred.lineTo(b.sampled_x,b.sampled_y); ctx.pred.stroke();
+        for (const p of [a,b]) { ctx.pred.beginPath(); ctx.pred.arc(p.sampled_x,p.sampled_y,5,0,Math.PI*2); ctx.pred.fill(); }
+        const mx=(a.sampled_x+b.sampled_x)/2, my=(a.sampled_y+b.sampled_y)/2; const text=formatDistance(m.distance_m); const tw=ctx.pred.measureText(text).width; ctx.pred.fillStyle='rgba(0,0,0,.72)'; ctx.pred.fillRect(mx-tw/2-5,my-24,tw+10,21); ctx.pred.fillStyle='#79d7ff'; ctx.pred.fillText(text,mx-tw/2,my-8);
+      }
+      if (state.measureStart) { ctx.pred.fillStyle='#ffca75'; ctx.pred.beginPath(); ctx.pred.arc(state.measureStart[0],state.measureStart[1],6,0,Math.PI*2); ctx.pred.fill(); }
+    }
+    function renderMeasurements() {
+      redrawPred(); const list=$('measure-list'); list.innerHTML='';
+      for (const m of state.measurements) { const row=document.createElement('div'); row.className='measure-item'; row.innerHTML=`<span>#${m.measurement_id} · ${formatDistance(m.distance_m)}</span><button data-id="${m.measurement_id}">×</button>`; row.querySelector('button').onclick=()=>deleteMeasurement(m.measurement_id); list.appendChild(row); }
+      $('clear-measure-btn').disabled=state.measurements.length===0; $('measure-readout').textContent=state.measurements.length ? formatDistance(state.measurements[state.measurements.length-1].distance_m) : '--';
+      $('measure-help').textContent=state.measureStart ? '已选择起点，请点击终点。' : '在 Predicted depth 上依次点击两个点。';
+    }
+    canvases.pred.addEventListener('click', async (event) => {
+      if (!state.captureId || !state.pred || state.status.phase !== 'ready') return;
+      const rect=canvases.pred.getBoundingClientRect(), x=Math.max(0,Math.min(state.width-1,Math.floor((event.clientX-rect.left)*state.width/rect.width))), y=Math.max(0,Math.min(state.height-1,Math.floor((event.clientY-rect.top)*state.height/rect.height)));
+      if (!state.measureStart) { state.measureStart=[x,y]; renderMeasurements(); return; }
+      const start=state.measureStart; state.measureStart=null;
+      try { const m=await api(`/api/captures/${state.captureId}/measurements`,{method:'POST',body:JSON.stringify({start,end:[x,y]})}); state.measurements.push(m); renderMeasurements(); }
+      catch (e) { $('measure-help').textContent=e.message; renderMeasurements(); }
+    });
+    async function deleteMeasurement(id) { await api(`/api/captures/${state.captureId}/measurements/${id}`,{method:'DELETE'}); state.measurements=state.measurements.filter(m=>m.measurement_id!==id); renderMeasurements(); }
+    $('clear-measure-btn').onclick=async()=>{ if (!state.captureId) return; await api(`/api/captures/${state.captureId}/measurements`,{method:'DELETE'}); state.measurements=[]; state.measureStart=null; renderMeasurements(); };
+
+    $('capture-btn').onclick=async()=>{ try { const result=await api('/api/capture',{method:'POST'}); state.captureId=result.capture_id; } catch(e){ $('notice').textContent=e.message; } };
+    $('recapture-btn').onclick=async()=>{ try { await api('/api/recapture',{method:'POST'}); state.captureId=null; state.pred=null; state.predBase=null; state.measurements=[]; state.measureStart=null; pointCount=0; $('pred-placeholder').hidden=false; $('pred-placeholder').textContent='inference idle'; $('cloud-placeholder').hidden=false; $('measure-readout').textContent='--'; renderMeasurements(); } catch(e){ $('notice').textContent=e.message; } };
+    $('retry-btn').onclick=async()=>{ if(state.captureId) await api(`/api/captures/${state.captureId}/retry`,{method:'POST'}); };
+    $('quit-btn').onclick=async()=>{ await api('/api/quit',{method:'POST'}); };
+    $('depth-max').oninput=()=>{ $('depth-max-out').textContent=`${Number($('depth-max').value).toFixed(1)} m`; if(state.raw)drawDepth(state.raw,ctx.raw,false); if(state.pred){drawDepth(state.pred,ctx.pred,true);buildCloud();renderMeasurements();} };
+    $('point-size').oninput=()=>{ $('point-size-out').textContent=Number($('point-size').value).toFixed(1); };
+    $('point-stride').oninput=()=>{ $('point-stride-out').textContent=$('point-stride').value; buildCloud(); };
+    connectWs();
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lingbot-realtime"
+version = "0.1.0"
+description = "Fork-local snapshot RGB-D web measurement application for LingBot-Depth"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "httpx>=0.28.0",
+    "mdm",
+    "uvicorn[standard]>=0.35.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]
+realsense = [
+    "pyrealsense2>=2.55.1; platform_system == 'Linux'",
+]
+
+[project.scripts]
+lingbot-realtime = "lingbot_realtime.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lingbot_realtime = ["web/static/*"]
+
+[tool.uv.sources]
+mdm = { path = "../..", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
