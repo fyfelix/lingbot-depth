@@ -85,9 +85,9 @@ class Block(nn.Module):
 
         self.sample_drop_ratio = drop_path
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, attn_bias=None) -> Tensor:
         def attn_residual_func(x: Tensor) -> Tensor:
-            return self.ls1(self.attn(self.norm1(x)))
+            return self.ls1(self.attn(self.norm1(x), attn_bias=attn_bias))
 
         def ffn_residual_func(x: Tensor) -> Tensor:
             return self.ls2(self.mlp(self.norm2(x)))
@@ -248,10 +248,12 @@ class NestedTensorBlock(Block):
             x = x + ffn_residual_func(x)
             return attn_bias.split(x)
 
-    def forward(self, x_or_x_list):
+    def forward(self, x_or_x_list, attn_bias=None):
         if isinstance(x_or_x_list, Tensor):
-            return super().forward(x_or_x_list)
+            return super().forward(x_or_x_list, attn_bias=attn_bias)
         elif isinstance(x_or_x_list, list):
+            if attn_bias is not None:
+                raise AssertionError("a tensor attention mask requires a dense token tensor")
             if not XFORMERS_AVAILABLE:
                 # A block-diagonal attention over independent variable-length
                 # samples is equivalent to applying the same block to every

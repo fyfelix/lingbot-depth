@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from contextlib import suppress
 from typing import Any
 
 import cv2
@@ -62,6 +63,8 @@ class RealSenseFrameSource:
                 selected = (width, height, fps)
                 break
             except RuntimeError as exc:
+                with suppress(Exception):
+                    candidate_pipeline.stop()
                 errors.append(f"{width}x{height}@{fps}: {exc}")
 
         if pipeline is None or profile is None or selected is None:

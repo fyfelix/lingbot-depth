@@ -299,6 +299,7 @@ class DinoVisionTransformer(nn.Module):
         x_depth = x_depth + depth_pose_enc
 
         ## mask depth tokens
+        static_depth_attention_mask = kwargs.get('static_depth_attention_mask', False)
         if kwargs.get('enable_depth_mask', True):        
             x_depth_masked, depth_mask_info = depth_masking(
                 x_depth, 
@@ -311,6 +312,30 @@ class DinoVisionTransformer(nn.Module):
         else:
             x_depth_masked = x_depth
             depth_mask_info = None
+
+        attention_mask = None
+        if static_depth_attention_mask:
+            patch_h = h_depth // depth_patch_num_h
+            patch_w = w_depth // depth_patch_num_w
+            depth_patches = x_depth_raw.reshape(
+                B, 1, depth_patch_num_h, patch_h, depth_patch_num_w, patch_w
+            )
+            depth_patches = depth_patches.permute(0, 2, 4, 1, 3, 5).reshape(
+                B, depth_patch_num_h * depth_patch_num_w, -1
+            )
+            valid_depth = (depth_patches >= -9.5) & (depth_patches <= 200.0)
+            depth_invalid_mask = valid_depth.sum(dim=-1) < 1
+            prefix_length = self.num_tokens + self.num_register_tokens + x_img.shape[1]
+            prefix_valid = torch.ones(
+                (B, prefix_length), dtype=torch.bool, device=x_depth.device
+            )
+            valid_keys = torch.cat((prefix_valid, ~depth_invalid_mask), dim=1)
+            attention_bias = torch.where(
+                valid_keys,
+                torch.zeros((), dtype=x_depth.dtype, device=x_depth.device),
+                torch.full((), -torch.inf, dtype=x_depth.dtype, device=x_depth.device),
+            )
+            attention_mask = attention_bias[:, None, None, :]
         
         ## mask image tokens
         x_img_masked = x_img
@@ -330,10 +355,12 @@ class DinoVisionTransformer(nn.Module):
             x_mased = x_mased.unsqueeze(0) # 1, 1 + num_register_tokens + length_img + length_depth, dim
             x_masked_list.append(x_mased)
 
-        return x_masked_list
+        return x_masked_list, attention_mask
 
     def _get_intermediate_layers_not_chunked(self, x_img, x_depth, x_img_mask=None, x_depth_mask=None, n=1, return_mae_aux=False, **kwargs):
-        x = self.prepare_tokens_with_masks(x_img, x_depth, x_img_mask, x_depth_mask, **kwargs)
+        x, attention_mask = self.prepare_tokens_with_masks(
+            x_img, x_depth, x_img_mask, x_depth_mask, **kwargs
+        )
 
         if not kwargs.get('enable_depth_mask', True):
             x = torch.cat(x, dim=0)
@@ -342,7 +369,7 @@ class DinoVisionTransformer(nn.Module):
         output, total_block_len = [], len(self.blocks)
         blocks_to_take = range(total_block_len - n, total_block_len) if isinstance(n, int) else n
         for i, blk in enumerate(self.blocks):
-            x = blk(x)
+            x = blk(x, attn_bias=attention_mask)
             if i in blocks_to_take:
                 output.append(x)
         assert len(output) == len(blocks_to_take), f"only {len(output)} / {len(blocks_to_take)} blocks found"
@@ -352,13 +379,17 @@ class DinoVisionTransformer(nn.Module):
         return output
 
     def _get_intermediate_layers_chunked(self, x_img, x_depth, x_img_mask=None, x_depth_mask=None, n=1, return_mae_aux=False, **kwargs):
-        x = self.prepare_tokens_with_masks(x_img, x_depth, x_img_mask, x_depth_mask, **kwargs)
+        x, attention_mask = self.prepare_tokens_with_masks(
+            x_img, x_depth, x_img_mask, x_depth_mask, **kwargs
+        )
+        if not kwargs.get('enable_depth_mask', True):
+            x = torch.cat(x, dim=0)
         output, i, total_block_len = [], 0, len(self.blocks[-1])
         # If n is an int, take the n last blocks. If it's a list, take them
         blocks_to_take = range(total_block_len - n, total_block_len) if isinstance(n, int) else n
         for block_chunk in self.blocks:
             for blk in block_chunk[i:]:  # Passing the nn.Identity()
-                x = blk(x)
+                x = blk(x, attn_bias=attention_mask)
                 if i in blocks_to_take:
                     output.append(x)
                 i += 1

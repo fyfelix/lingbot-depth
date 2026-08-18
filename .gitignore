@@ -19,3 +19,9 @@ ckpts/
 data/
 output/
 outputs/
+apps/lingbot_realtime/runs/
+*.engine
+*.timing.cache
+*.onnx
+*.onnx.data
+deployment.json

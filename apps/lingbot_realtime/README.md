@@ -1,116 +1,176 @@
-# LingBot Realtime
+# LingBot Realtime D435
 
-Fork-local RealSense snapshot web application. It imports the upstream `mdm` model through its
-public API and keeps all application code inside `apps/lingbot_realtime`.
+LingBot-Depth 的连续 RGB-D 推理、WebGL 可视化、录制、snapshot 测量和 TensorRT FP16
+部署应用。相机只由一个 worker 持有；实时页面、点云页面、录制和 snapshot 都消费同一条最新帧流，
+不会为浏览器或抓拍重复打开 D435。
 
-## macOS development mode
+## 页面与控制
 
-No RealSense device or model download is required:
+- `/`：连续 RGB、raw depth、predicted depth 和预测点云主界面。
+- `/pointcloud`：共享相机 worker 的 raw D435 点云。
+- `/snapshot`：从最新完整预测冻结不可变副本，保留两点测量、重试和逐次持久化。
+- `/status`：相机、模型、FPS、录制和错误状态。
+
+推理速度低于相机速度时不会创建无界队列。worker 每次只发布最新完成结果；WebSocket 使用单帧
+`frame_ack`，每个浏览器最多有一帧在途。
+
+## 安装与测试
+
+推荐使用项目 Conda 环境，并安装应用为 editable package：
 
 ```bash
-uv sync --project apps/lingbot_realtime --extra test
-uv run --project apps/lingbot_realtime \
-  python -m lingbot_realtime --source fixture --inference-engine mock
+conda activate lingbot-depth
+python -m pip install -e "apps/lingbot_realtime[test,realsense,deploy]"
+pytest -q apps/lingbot_realtime/tests
 ```
 
-Open <http://127.0.0.1:8000>. The fixture source generates a deterministic animated RGB-D scene.
-Capture, inference state transitions, depth visualization, point-cloud rendering, and 2D metric
-measurement all remain available.
-
-Depth visualization follows the AS-Depth realtime policy while keeping the underlying arrays in
-meters: raw sensor depth uses the stable `--vis-min`/`--vis-max` range (`0.1–5.0 m` by default),
-and predicted depth uses the valid-pixel `--pred-vis-percentile-min`/
-`--pred-vis-percentile-max` range (`1–99%` by default). Invalid, non-finite, and
-`--max-depth`-exceeding values render black. These display settings do not change inference,
-point-cloud geometry, or 2D measurement values.
-
-Before inference, a separate preprocessing step copies the sensor depth and replaces non-finite,
-non-positive, and `--max-depth`-exceeding samples with zero, matching the AS-Depth D435 input
-contract. The original aligned sensor depth remains unchanged for preview and persistence.
-
-Run tests with:
+不连接相机、不下载模型的本地闭环：
 
 ```bash
-(cd apps/lingbot_realtime && uv run pytest)
+lingbot-realtime --source fixture --backend mock --bind 127.0.0.1
 ```
 
-## MDM inference on a fixture
+无模型或 engine 时可以仅启动传感器流：
 
 ```bash
-uv run --project apps/lingbot_realtime \
-  python -m lingbot_realtime \
-  --source fixture \
-  --inference-engine mdm \
+lingbot-realtime --source realsense --backend auto --no-inference
+```
+
+## PyTorch 与 TensorRT
+
+PyTorch BF16 回退：
+
+```bash
+lingbot-realtime \
+  --source realsense \
+  --backend torch \
   --model-path robbyant/lingbot-depth-pretrain-vitl-14-v0.5 \
-  --device mps
+  --device cuda \
+  --resolution-level 0 \
+  --num-tokens 1200
 ```
+
+正式 TensorRT FP16 路径：
+
+```bash
+lingbot-realtime \
+  --source realsense \
+  --backend tensorrt \
+  --engine runs/deploy/d435-fp16/model.engine \
+  --manifest runs/deploy/d435-fp16/deployment.json \
+  --device cuda
+```
+
+`--backend auto` 的选择顺序是：传入 `--engine` 时使用 TensorRT，传入 `--model-path` 时使用
+PyTorch，否则为 sensor-only。旧 `--inference-engine mdm|mock` 仍可使用，其中 `mdm` 映射到
+`torch`。
+
+默认部署规格固定为：
+
+- 输入 `rgbd_input: float16 [1,4,480,640]`；RGB 为 `[0,1]`，深度为米，invalid 为 `0`。
+- 输出 `depth: float16 [1,480,640]`；应用边界转换为 float32 米制深度。
+- 1200 tokens、`resolution_level=0`、关闭按深度有效性动态删除 token、保留预测 mask。
+
+导出的图保持 FP16 输入、输出、权重和主要 GEMM/卷积；序列长度固定不做动态 token 删除，
+并用静态 attention key mask 排除无效深度 token。Transformer 的 LayerNorm、Softmax、Add 和
+layer-scale 累计链保留 FP32，并在边界插入 Cast。两项策略分别记录在 manifest 的
+`static_depth_attention_mask` 和 `fp32_stability_policy` 字段中。
+
+## 导出与构建
+
+`lingbot-realtime-deploy` 提供三个子命令：
+
+```bash
+# FP32 ONNX -> 图级 FP16 ONNX
+lingbot-realtime-deploy export \
+  --model robbyant/lingbot-depth-pretrain-vitl-14-v0.5 \
+  --output runs/deploy/d435-fp16 \
+  --device cuda
+
+# Strongly Typed FP16 engine、timing cache、build log
+lingbot-realtime-deploy build \
+  --onnx runs/deploy/d435-fp16/model.fp16.onnx \
+  --output runs/deploy/d435-fp16 \
+  --trtexec trtexec
+
+# 完整导出、检查、构建和 smoke benchmark
+lingbot-realtime-deploy all \
+  --model robbyant/lingbot-depth-pretrain-vitl-14-v0.5 \
+  --output runs/deploy/d435-fp16 \
+  --device cuda \
+  --trtexec trtexec
+```
+
+产物目录包含：
+
+```text
+model.fp32.onnx
+model.fp32.onnx.data
+model.fp16.onnx
+model.fp16.onnx.data
+model.engine
+timing.cache
+build.log
+deployment.json
+```
+
+`deployment.json` 记录 checkpoint hash、tensor 语义、token 配置、precision、ONNX/TensorRT
+版本、GPU capability、benchmark 和所有产物 checksum。TensorRT engine 必须在兼容的 TensorRT
+major 环境中构建；传入 manifest 后，major、FP16 IO、固定 shape 或 engine checksum 不兼容都会在
+runtime 加载阶段明确失败。
+
+## 相机、推理和录制控制
+
+常用选项：
+
+```text
+--no-auto-connect
+--no-inference
+--preview-fps 15
+--ack-timeout 10
+--cloud-stride 2
+--cloud-point-budget 180000
+--no-record
+--record-root apps/lingbot_realtime/runs/recordings
+--max-record-frames 0
+```
+
+连续录制每个 session 固定写：
+
+```text
+rgb.mp4
+raw_depth.npy     # uint16 millimeter (N,H,W)
+pred_depth.npy    # float32 meter (N,H,W), invalid=0
+frames.jsonl
+meta.json
+```
+
+开始录制前必须连接相机并启用推理；录制期间不允许切换推理。停止录制或正常退出时流式 NPY
+header 会回填真实帧数，文件可以直接用 `numpy.load` 重新读取。
+
+snapshot 单次保存使用：
+
+```bash
+lingbot-realtime ... --save-results --output-root apps/lingbot_realtime/runs
+```
+
+每次 capture 保存 RGB、raw/pred metric depth、深度可视化、PLY、intrinsics、metadata 和测量结果。
 
 ## RealSense
 
-`pyrealsense2` is imported only when `--source realsense` is selected. On Linux it can be
-installed through the `realsense` extra. macOS has no compatible PyPI wheel for every Python
-release, so this app includes a reproducible source-build installer that targets its own virtual
-environment. It does not install Python files into Homebrew or modify upstream project files.
+Linux 上安装 `realsense` extra 后，应用会在实际选择 `--source realsense` 时惰性导入
+`pyrealsense2`。默认请求 `640x480@30`，失败时依次尝试 15 FPS 和 6 FPS；深度对齐到 color，
+使用设备报告的 depth scale 和 color intrinsics。
 
-From the repository root:
+macOS 的源码构建与 USB 检查工具仍位于 `scripts/install_pyrealsense2_macos.sh`、
+`scripts/check_realsense_macos.py` 和 `scripts/run_realsense_macos.sh`。
 
-```bash
-brew install librealsense cmake ninja pkg-config
-uv sync --project apps/lingbot_realtime --extra test
-apps/lingbot_realtime/scripts/install_pyrealsense2_macos.sh
-apps/lingbot_realtime/.venv/bin/python \
-  apps/lingbot_realtime/scripts/check_realsense_macos.py
-```
-
-The installer builds the same librealsense version reported by Homebrew for the app's exact
-Python ABI and CPU architecture. Re-run it after changing the app Python version or upgrading
-Homebrew librealsense.
-
-### macOS 12 and newer USB access
-
-Librealsense's official macOS documentation requires elevated privileges on macOS 12 and newer.
-The OS attaches its `UVCAssistant` driver to the camera's UVC interfaces, so an ordinary process
-can discover the D435 but fails to claim it with `RS2_USB_STATUS_ACCESS` or `failed to set power
-state`.
-
-First validate SDK access with the exact app interpreter:
+受管 Conda 启动可使用：
 
 ```bash
-sudo -H apps/lingbot_realtime/.venv/bin/python \
-  apps/lingbot_realtime/scripts/check_realsense_macos.py
+LINGBOT_REALTIME_ENGINE=/srv/lingbot/deploy/model.engine \
+LINGBOT_REALTIME_MANIFEST=/srv/lingbot/deploy/deployment.json \
+apps/lingbot_realtime/scripts/run_managed.sh
 ```
 
-For a bounded end-to-end check that starts the real web server, waits for a D435 frame, captures
-the scene, runs mock inference, creates one 2D measurement, and shuts down cleanly:
-
-```bash
-sudo -H apps/lingbot_realtime/.venv/bin/python \
-  apps/lingbot_realtime/scripts/smoke_realsense_demo.py
-```
-
-Then start the camera with mock inference to isolate capture from model setup:
-
-```bash
-apps/lingbot_realtime/scripts/run_realsense_macos.sh
-```
-
-Open <http://127.0.0.1:8000>. The launcher explicitly elevates only the app's Python process and
-defaults to mock inference. To run MDM after camera validation:
-
-```bash
-apps/lingbot_realtime/scripts/run_realsense_macos.sh \
-  --inference-engine mdm \
-  --model-path robbyant/lingbot-depth-pretrain-vitl-14-v0.5 \
-  --device mps
-```
-
-Use a USB 3.x data cable and prefer a direct MacBook port. Hubs and docks add another failure
-point for D4xx bandwidth and power negotiation. The default camera profile is `640x480@30`; depth
-is aligned to the color stream, and the device-provided depth scale and color intrinsics are used
-for inference and measurement.
-
-## Optional result persistence
-
-Pass `--save-results --output-root apps/lingbot_realtime/runs`. Each capture writes RGB,
-raw/predicted metric depth arrays, visualizations, point cloud, intrinsics, metadata, and
-measurements into its own directory.
+模型、ONNX、engine、timing cache 和录制目录已在仓库 `.gitignore` 中排除。

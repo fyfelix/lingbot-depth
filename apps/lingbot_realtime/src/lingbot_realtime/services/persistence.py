@@ -6,7 +6,6 @@ from typing import Any
 
 import cv2
 import numpy as np
-import trimesh
 
 from lingbot_realtime.domain import CaptureRecord
 from lingbot_realtime.visualization import DepthVisualizationConfig, colorize_depth_fast
@@ -64,8 +63,7 @@ class PersistenceService:
             & (result.pred_depth_m > 0)
         )
         if valid.any():
-            cloud = trimesh.PointCloud(result.points[valid], frame.color_rgb[valid])
-            cloud.export(root / "point_cloud.ply")
+            self._write_ply(root / "point_cloud.ply", result.points[valid], frame.color_rgb[valid])
         self._write_json(root / "intrinsics.json", frame.intrinsics.to_dict())
         self._write_json(
             root / "meta.json",
@@ -104,4 +102,27 @@ class PersistenceService:
             json.dumps(value, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+        temporary.replace(path)
+
+    @staticmethod
+    def _write_ply(path: Path, points: np.ndarray, colors: np.ndarray) -> None:
+        xyz = np.asarray(points, dtype=np.float32).reshape(-1, 3)
+        rgb = np.asarray(colors, dtype=np.uint8).reshape(-1, 3)
+        header = (
+            "ply\nformat binary_little_endian 1.0\n"
+            f"element vertex {len(xyz)}\n"
+            "property float x\nproperty float y\nproperty float z\n"
+            "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+            "end_header\n"
+        ).encode("ascii")
+        dtype = np.dtype(
+            [("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("r", "u1"), ("g", "u1"), ("b", "u1")]
+        )
+        vertices = np.empty(len(xyz), dtype=dtype)
+        vertices["x"], vertices["y"], vertices["z"] = xyz.T
+        vertices["r"], vertices["g"], vertices["b"] = rgb.T
+        temporary = path.with_name(f".{path.name}.tmp")
+        with temporary.open("wb") as stream:
+            stream.write(header)
+            stream.write(vertices.tobytes())
         temporary.replace(path)

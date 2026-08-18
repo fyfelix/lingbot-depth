@@ -53,6 +53,7 @@
     canvas { display: block; width: 100%; height: 100%; }
     #pred-canvas.ready { cursor: crosshair; }
     .placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #697482; font: 12px var(--mono); pointer-events: none; }
+    .placeholder[hidden] { display: none; }
     .side { display: grid; gap: 12px; align-content: start; }
     .section { padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
     .section h2 { margin: 0 0 10px; color: var(--muted); font-size: 11px; letter-spacing: .09em; text-transform: uppercase; }

@@ -9,19 +9,32 @@ from lingbot_realtime.visualization import DepthVisualizationConfig
 @dataclass(frozen=True)
 class AppConfig:
     source: str = "realsense"
-    inference_engine: str = "mdm"
+    inference_engine: str = "auto"
     model_path: str | None = None
+    engine_path: Path | None = None
+    manifest_path: Path | None = None
     device: str = "auto"
     width: int = 640
     height: int = 480
     fps: int = 30
     max_depth_m: float = 6.0
-    resolution_level: int = 9
+    resolution_level: int = 0
+    num_tokens: int = 1200
     apply_mask: bool = True
     bind: str = "127.0.0.1"
     port: int = 8000
     preview_fps: float = 15.0
     ack_timeout_sec: float = 10.0
+    send_timeout_sec: float = 2.0
+    auto_connect: bool = True
+    inference_enabled: bool = True
+    cloud_stride: int = 2
+    cloud_point_budget: int = 180_000
+    record_enabled: bool = True
+    record_root: Path = Path("apps/lingbot_realtime/runs/recordings")
+    record_session_id: str | None = None
+    record_overwrite: bool = False
+    max_record_frames: int = 0
     save_results: bool = False
     output_root: Path = Path("apps/lingbot_realtime/runs")
     vis_min_m: float = 0.1
@@ -41,10 +54,12 @@ class AppConfig:
     def validate(self) -> None:
         if self.source not in {"fixture", "realsense"}:
             raise ValueError(f"Unsupported source: {self.source}")
-        if self.inference_engine not in {"mock", "mdm"}:
+        if self.inference_engine not in {"auto", "mock", "torch", "tensorrt", "mdm"}:
             raise ValueError(f"Unsupported inference engine: {self.inference_engine}")
-        if self.inference_engine == "mdm" and not self.model_path:
-            raise ValueError("--model-path is required when --inference-engine=mdm")
+        if self.inference_engine in {"torch", "mdm"} and not self.model_path:
+            raise ValueError("--model-path is required when --backend=torch")
+        if self.inference_engine == "tensorrt" and self.engine_path is None:
+            raise ValueError("--engine is required when --backend=tensorrt")
         if self.width <= 0 or self.height <= 0 or self.fps <= 0:
             raise ValueError("Camera width, height and fps must be positive")
         if self.max_depth_m <= 0:
@@ -55,7 +70,15 @@ class AppConfig:
             raise ValueError("Invalid predicted depth visualization percentiles")
         if not 0 <= self.resolution_level <= 9:
             raise ValueError("--resolution-level must be between 0 and 9")
+        if self.num_tokens <= 0:
+            raise ValueError("--num-tokens must be positive")
         if self.preview_fps <= 0:
             raise ValueError("--preview-fps must be positive")
         if self.ack_timeout_sec <= 0:
             raise ValueError("--ack-timeout must be positive")
+        if self.send_timeout_sec <= 0:
+            raise ValueError("--send-timeout must be positive")
+        if self.cloud_stride <= 0 or self.cloud_point_budget < 0:
+            raise ValueError("Point-cloud stride must be positive and budget non-negative")
+        if self.max_record_frames < 0:
+            raise ValueError("--max-record-frames cannot be negative")

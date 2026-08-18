@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LingBot-Depth Realtime</title>
+  <style>
+    :root{color-scheme:dark;--bg:#080c12;--panel:#111925;--line:#26364b;--text:#e6eef8;--muted:#91a4ba;--accent:#61d6ff;--ok:#5ee6a8;--bad:#ff7188}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,sans-serif}
+    header{height:58px;display:flex;align-items:center;gap:12px;padding:0 18px;border-bottom:1px solid var(--line);background:#0b111acc;position:sticky;top:0;z-index:2;backdrop-filter:blur(12px)}
+    h1{font-size:17px;margin:0}.tag,.metric{border:1px solid var(--line);border-radius:999px;padding:5px 9px;color:var(--muted)}.tag.ok{color:var(--ok)}.tag.bad{color:var(--bad)}nav{margin-left:auto;display:flex;gap:12px}a{color:var(--accent);text-decoration:none}
+    main{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:14px;padding:14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card,aside{background:#0d151f;border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 12px 32px #0005}.head{display:flex;justify-content:space-between;padding:10px 12px;color:var(--muted)}canvas{width:100%;aspect-ratio:4/3;display:block;background:#020407}.controls{padding:14px;display:grid;gap:12px}button{border:1px solid var(--line);background:#172536;color:var(--text);border-radius:8px;padding:10px;cursor:pointer}button.primary{background:#0c6684;border-color:#1792b8}button.danger{background:#57212a;border-color:#9a3445}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.status{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;color:var(--muted)}.status b{color:var(--text);text-align:right}input{width:100%}.notice{min-height:48px;padding:10px;border:1px solid var(--line);border-radius:8px;color:var(--muted)}
+    @media(max-width:900px){main{grid-template-columns:1fr}.grid{grid-template-columns:1fr}header{height:auto;min-height:58px;flex-wrap:wrap;padding:10px}}
+  </style>
+</head>
+<body>
+  <header><h1>LingBot-Depth · D435 Realtime</h1><span class="tag" id="camera">camera idle</span><span class="tag" id="model">model idle</span><span class="metric" id="fps">0 FPS</span><nav><a href="/snapshot">Snapshot 测量</a><a href="/pointcloud">Raw Point Cloud</a></nav></header>
+  <main>
+    <section class="grid">
+      <article class="card"><div class="head"><span>RGB</span><span id="rgb-meta">--</span></div><canvas id="rgb"></canvas></article>
+      <article class="card"><div class="head"><span>Raw Depth</span><span>sensor</span></div><canvas id="raw"></canvas></article>
+      <article class="card"><div class="head"><span>Predicted Depth</span><span id="infer-meta">--</span></div><canvas id="pred"></canvas></article>
+      <article class="card"><div class="head"><span>Predicted Point Cloud</span><span>XYZ / RGB</span></div><canvas id="cloud"></canvas></article>
+    </section>
+    <aside class="controls">
+      <div class="row"><button class="primary" id="connect">连接相机</button><button id="disconnect">断开相机</button></div>
+      <div class="row"><button id="inference">切换推理</button><button id="record">开始录制</button></div>
+      <button class="danger" id="quit">退出服务</button>
+      <label>显示最大深度 <output id="depth-out">6.0 m</output><input id="depth" type="range" min="0.5" max="10" step="0.1" value="6"></label>
+      <label>点大小 <output id="point-out">2.0</output><input id="point" type="range" min="1" max="8" step="0.25" value="2"></label>
+      <div class="status"><span>Backend</span><b id="engine">--</b><span>Frame</span><b id="frame">--</b><span>Inference</span><b id="inf-fps">--</b><span>End-to-end</span><b id="e2e-fps">--</b><span>Saved</span><b id="saved">0</b></div>
+      <div class="notice" id="notice">等待服务状态…</div>
+    </aside>
+  </main>
+<script>
+(()=>{
+  const $=id=>document.getElementById(id), C={rgb:$('rgb'),raw:$('raw'),pred:$('pred'),cloud:$('cloud')}, X={rgb:C.rgb.getContext('2d'),raw:C.raw.getContext('2d'),pred:C.pred.getContext('2d')};
+  const S={header:null,status:{},w:0,h:0,color:null,raw:null,pred:null,intr:null,yaw:.1,pitch:-.12,distance:2.8,drag:false,lx:0,ly:0};
+  const resize=(c,w,h)=>{if(c.width!==w||c.height!==h){c.width=w;c.height=h}};
+  function turbo(t){t=Math.max(0,Math.min(1,t));const r=.1357+t*(4.6154+t*(-42.6603+t*(132.1311+t*(-152.9424+t*59.2864)))),g=.0914+t*(2.1942+t*(4.843+t*(-14.185+t*(4.277+t*2.83)))),b=.1067+t*(12.642+t*(-60.582+t*(110.363+t*(-89.903+t*27.348))));return[r,g,b].map(v=>Math.round(255*Math.max(0,Math.min(1,v))))}
+  function drawRgb(){resize(C.rgb,S.w,S.h);const im=X.rgb.createImageData(S.w,S.h);for(let i=0,j=0;i<S.color.length;i+=3,j+=4){im.data[j]=S.color[i+2];im.data[j+1]=S.color[i+1];im.data[j+2]=S.color[i];im.data[j+3]=255}X.rgb.putImageData(im,0,0)}
+  function drawDepth(data,ctx){resize(ctx.canvas,S.w,S.h);const im=ctx.createImageData(S.w,S.h),max=+$('depth').value;for(let i=0,j=0;i<data.length;i++,j+=4){const z=data[i]/1000;if(!z||z>max){im.data[j+3]=255;continue}const c=turbo((z-.1)/(max-.1));im.data[j]=c[0];im.data[j+1]=c[1];im.data[j+2]=c[2];im.data[j+3]=255}ctx.putImageData(im,0,0)}
+  function view(buf,s){return new Uint8Array(buf,s.offset,s.bytes)}
+  function u16(buf,s){return new Uint16Array(buf,s.offset,s.bytes/2)}
+  function consume(h,b){S.w=h.color.shape[1];S.h=h.color.shape[0];S.color=new Uint8Array(view(b,h.color));S.raw=new Uint16Array(u16(b,h.raw_depth));S.pred=h.pred_depth?new Uint16Array(u16(b,h.pred_depth)):null;S.intr=h.intrinsics;drawRgb();drawDepth(S.raw,X.raw);if(S.pred)drawDepth(S.pred,X.pred);buildCloud();$('rgb-meta').textContent=`${S.w}×${S.h}`;$('infer-meta').textContent=`${Number(h.inference_dt_sec||0).toFixed(3)} s`;}
+  async function api(path){const r=await fetch(path,{method:'POST'}),j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.detail||r.statusText);return j}
+  function status(s){S.status=s;$('camera').textContent=`camera ${s.camera_status}`;$('camera').className='tag '+(s.camera_status==='running'?'ok':s.camera_status==='error'?'bad':'');$('model').textContent=`model ${s.model_status}`;$('model').className='tag '+(s.model_status==='ready'?'ok':s.model_status==='error'?'bad':'');$('fps').textContent=`${Number(s.e2e_window_fps||0).toFixed(1)} FPS`;$('engine').textContent=`${s.engine} / ${s.device}`;$('frame').textContent=s.frame_id??'--';$('inf-fps').textContent=`${Number(s.inference_window_fps||0).toFixed(1)} FPS`;$('e2e-fps').textContent=`${Number(s.e2e_window_fps||0).toFixed(1)} FPS`;$('saved').textContent=s.saved||0;$('record').textContent=s.record_on?'停止录制':'开始录制';$('notice').textContent=s.camera_error||s.model_error||(s.record_on?`正在录制到 ${s.session_dir}`:'实时流就绪。')}
+  setInterval(()=>fetch('/status').then(r=>r.json()).then(status).catch(()=>{}),500);
+  $('connect').onclick=()=>api('/camera/connect').catch(e=>$('notice').textContent=e.message);$('disconnect').onclick=()=>api('/camera/disconnect').catch(e=>$('notice').textContent=e.message);$('inference').onclick=()=>api(`/inference?enabled=${!S.status.inference_enabled}`).catch(e=>$('notice').textContent=e.message);$('record').onclick=()=>api('/record/toggle').catch(e=>$('notice').textContent=e.message);$('quit').onclick=()=>api('/quit');$('depth').oninput=()=>{$('depth-out').textContent=`${$('depth').value} m`;if(S.raw)drawDepth(S.raw,X.raw);if(S.pred)drawDepth(S.pred,X.pred);buildCloud()};$('point').oninput=()=>$('point-out').textContent=$('point').value;
+  function ws(){const p=location.protocol==='https:'?'wss:':'ws:',w=new WebSocket(`${p}//${location.host}/ws/realtime`);w.binaryType='arraybuffer';w.onmessage=e=>{if(typeof e.data==='string'){const h=JSON.parse(e.data);if(h.type==='frame')S.header=h;return}if(!S.header)return;const h=S.header;S.header=null;consume(h,e.data);w.send(JSON.stringify({type:'frame_ack',frame_id:h.frame_id}))};w.onclose=()=>{if(!S.status.quit_requested)setTimeout(ws,800)};w.onerror=()=>w.close()}ws();
+  const gl=C.cloud.getContext('webgl2');let prog,pb,cb,n=0,center=1.5;
+  function sh(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);return x}function init(){prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,`#version 300 es\nin vec3 p;in vec3 c;out vec3 C;uniform float y,q,d,a,z,s;void main(){vec3 v=vec3(p.x,-p.y,p.z-z);float cy=cos(y),sy=sin(y),cp=cos(q),sp=sin(q);v=vec3(cy*v.x+sy*v.z,v.y,-sy*v.x+cy*v.z);v=vec3(v.x,cp*v.y-sp*v.z,sp*v.y+cp*v.z);v=vec3(v.x,v.y,-d-v.z);gl_Position=vec4(v.x*1.65/a,v.y*1.65,-1.004*v.z-.1,-v.z);gl_PointSize=s;C=c;}`));gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,`#version 300 es\nprecision mediump float;in vec3 C;out vec4 o;void main(){if(distance(gl_PointCoord,vec2(.5))>.5)discard;o=vec4(C,1);}`));gl.linkProgram(prog);pb=gl.createBuffer();cb=gl.createBuffer();gl.enable(gl.DEPTH_TEST)}init();
+  function buildCloud(){if(!S.pred||!S.intr)return;const p=[],c=[],st=2,max=+$('depth').value,i=S.intr;let sum=0;for(let y=0;y<S.h;y+=st)for(let x=0;x<S.w;x+=st){const k=y*S.w+x,z=S.pred[k]/1000;if(!z||z>max)continue;p.push(((x+.5-i.ppx)/i.fx)*z,((y+.5-i.ppy)/i.fy)*z,z);const q=k*3;c.push(S.color[q+2]/255,S.color[q+1]/255,S.color[q]/255);sum+=z}n=p.length/3;center=n?sum/n:1.5;gl.bindBuffer(gl.ARRAY_BUFFER,pb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(p),gl.STATIC_DRAW);gl.bindBuffer(gl.ARRAY_BUFFER,cb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(c),gl.STATIC_DRAW)}
+  function render(){const r=C.cloud.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);resize(C.cloud,Math.max(1,r.width*dpr|0),Math.max(1,r.height*dpr|0));gl.viewport(0,0,C.cloud.width,C.cloud.height);gl.clearColor(.005,.008,.012,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);if(n){gl.useProgram(prog);for(const [name,b] of [['p',pb],['c',cb]]){const l=gl.getAttribLocation(prog,name);gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,3,gl.FLOAT,false,0,0)}for(const [name,v] of [['y',S.yaw],['q',S.pitch],['d',S.distance],['a',C.cloud.width/C.cloud.height],['z',center],['s',+$('point').value*dpr]])gl.uniform1f(gl.getUniformLocation(prog,name),v);gl.drawArrays(gl.POINTS,0,n)}requestAnimationFrame(render)}render();C.cloud.onpointerdown=e=>{S.drag=true;S.lx=e.clientX;S.ly=e.clientY};C.cloud.onpointermove=e=>{if(!S.drag)return;S.yaw+=(e.clientX-S.lx)*.008;S.pitch=Math.max(-1.4,Math.min(1.4,S.pitch+(e.clientY-S.ly)*.008));S.lx=e.clientX;S.ly=e.clientY};C.cloud.onpointerup=()=>S.drag=false;C.cloud.onwheel=e=>{e.preventDefault();S.distance=Math.max(.4,Math.min(10,S.distance+e.deltaY*.002))};
+})();
+</script></body></html>

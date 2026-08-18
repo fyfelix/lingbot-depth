@@ -15,12 +15,14 @@ class MDMInferenceEngine:
         model_path: str,
         device: str = "auto",
         resolution_level: int = 9,
+        num_tokens: int = 1200,
         apply_mask: bool = True,
         max_depth_m: float = 6.0,
     ) -> None:
         self.model_path = model_path
         self.requested_device = device
         self.resolution_level = int(resolution_level)
+        self.num_tokens = int(num_tokens)
         self.apply_mask = bool(apply_mask)
         self.max_depth_m = float(max_depth_m)
         self._torch: Any = None
@@ -79,6 +81,7 @@ class MDMInferenceEngine:
             depth_in=depth,
             intrinsics=intrinsics,
             resolution_level=self.resolution_level,
+            num_tokens=self.num_tokens,
             apply_mask=self.apply_mask,
             use_fp16=use_fp16,
         )

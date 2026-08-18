@@ -49,6 +49,26 @@ class RGBDFrame:
     intrinsics: CameraIntrinsics
     depth_scale_m: float
 
+    def __post_init__(self) -> None:
+        color = np.array(self.color_rgb, dtype=np.uint8, copy=True, order="C")
+        raw = np.array(self.raw_depth_u16, dtype=np.uint16, copy=True, order="C")
+        depth = np.array(self.depth_m, dtype=np.float32, copy=True, order="C")
+        if color.ndim != 3 or color.shape[2] != 3:
+            raise ValueError(f"color_rgb must be HxWx3, got {color.shape}")
+        if raw.shape != color.shape[:2] or depth.shape != raw.shape:
+            raise ValueError(
+                "RGB-D arrays must be aligned: "
+                f"color={color.shape}, raw={raw.shape}, depth={depth.shape}"
+            )
+        if self.frame_id < 0 or self.timestamp < 0 or self.depth_scale_m <= 0:
+            raise ValueError("frame id/timestamp must be non-negative and depth scale positive")
+        color.setflags(write=False)
+        raw.setflags(write=False)
+        depth.setflags(write=False)
+        object.__setattr__(self, "color_rgb", color)
+        object.__setattr__(self, "raw_depth_u16", raw)
+        object.__setattr__(self, "depth_m", depth)
+
     def frozen_copy(self) -> "RGBDFrame":
         return RGBDFrame(
             frame_id=self.frame_id,
@@ -66,6 +86,42 @@ class InferenceResult:
     pred_depth_m: np.ndarray
     points: np.ndarray
     elapsed_sec: float
+
+    def __post_init__(self) -> None:
+        depth = np.array(self.pred_depth_m, dtype=np.float32, copy=True, order="C")
+        points = np.array(self.points, dtype=np.float32, copy=True, order="C")
+        if depth.ndim != 2 or points.shape != (*depth.shape, 3):
+            raise ValueError(
+                f"Inference arrays must be HxW and HxWx3, got {depth.shape}, {points.shape}"
+            )
+        depth[~np.isfinite(depth) | (depth < 0)] = 0.0
+        depth.setflags(write=False)
+        points.setflags(write=False)
+        object.__setattr__(self, "pred_depth_m", depth)
+        object.__setattr__(self, "points", points)
+
+    def frozen_copy(self) -> "InferenceResult":
+        return InferenceResult(
+            pred_depth_m=self.pred_depth_m,
+            points=self.points,
+            elapsed_sec=self.elapsed_sec,
+        )
+
+
+@dataclass(frozen=True)
+class PredictionPacket:
+    frame: RGBDFrame
+    result: InferenceResult | None
+    sequence: int
+    timings_ms: dict[str, float] = field(default_factory=dict)
+
+    def frozen_copy(self) -> "PredictionPacket":
+        return PredictionPacket(
+            frame=self.frame.frozen_copy(),
+            result=self.result.frozen_copy() if self.result is not None else None,
+            sequence=self.sequence,
+            timings_ms=dict(self.timings_ms),
+        )
 
 
 @dataclass(frozen=True)
