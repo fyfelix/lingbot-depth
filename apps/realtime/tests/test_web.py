@@ -55,3 +55,39 @@ def test_web_capture_and_measurement_routes():
         assert measured.json()["distance_m"] > 0
         assert client.delete(f"/api/captures/{capture_id}/measurements").status_code == 200
         assert client.post("/api/recapture").status_code == 200
+
+
+def test_web_serves_aligned_full_webgl_ui() -> None:
+    with TestClient(_make_app()) as client:
+        realtime = client.get("/").text
+        assert "LingBot-Depth" in realtime
+        assert "lingbot.realtime.webgl.v2" in realtime
+        assert 'id="show-raw-cloud"' in realtime
+        assert 'id="btn-orbit"' in realtime
+        assert 'href="/snapshot"' in realtime
+
+        pointcloud = client.get("/pointcloud").text
+        assert "LingBot-Depth RGBD Point Cloud" in pointcloud
+        assert "/ws/pointcloud" in pointcloud
+        assert 'href="/"' in pointcloud
+
+
+def test_snapshot_frame_carries_atomic_runtime_status() -> None:
+    with TestClient(_make_app()) as client:
+        _wait_status(client, lambda s: s["prediction_frame_id"] is not None)
+        with client.websocket_connect("/ws/preview") as websocket:
+            assert websocket.receive_json()["type"] == "hello"
+            captured = client.post("/api/capture").json()["capture_id"]
+            for _ in range(20):
+                header = websocket.receive_json()
+                if header["type"] == "state":
+                    continue
+                websocket.receive_bytes()
+                websocket.send_json({"type": "ack", "revision": header["revision"]})
+                if header["type"] == "capture_result":
+                    assert header["capture_id"] == captured
+                    assert header["status"]["phase"] == "ready"
+                    assert header["status"]["capture"]["capture_id"] == captured
+                    break
+            else:
+                raise AssertionError("snapshot WebSocket did not publish capture_result")

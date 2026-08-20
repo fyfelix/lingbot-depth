@@ -40,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument("--serial", help="Optional RealSense device serial")
     parser.add_argument(
         "--camera-read-timeout",
         type=float,
@@ -64,14 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cloud-stride", type=int, default=2)
     parser.add_argument("--cloud-point-budget", type=int, default=180_000)
     parser.add_argument("--no-record", action="store_true")
-    parser.add_argument(
-        "--record-root", type=Path, default=Path("apps/lingbot_realtime/runs/recordings")
-    )
+    parser.add_argument("--record-root", type=Path, default=Path("apps/realtime/runs/recordings"))
     parser.add_argument("--record-session-id")
     parser.add_argument("--record-overwrite", action="store_true")
     parser.add_argument("--max-record-frames", type=int, default=0)
     parser.add_argument("--save-results", action="store_true")
-    parser.add_argument("--output-root", type=Path, default=Path("apps/lingbot_realtime/runs"))
+    parser.add_argument("--output-root", type=Path, default=Path("apps/realtime/runs"))
     return parser
 
 
@@ -95,6 +94,7 @@ def build_config(argv: Sequence[str] | None = None) -> AppConfig:
         width=args.width,
         height=args.height,
         fps=args.fps,
+        serial=args.serial,
         camera_read_timeout_sec=args.camera_read_timeout,
         max_depth_m=args.max_depth,
         vis_min_m=args.vis_min,
@@ -129,7 +129,12 @@ def build_runtime(config: AppConfig) -> RuntimeController:
     source = (
         FixtureFrameSource(config.width, config.height, config.fps)
         if config.source == "fixture"
-        else RealSenseFrameSource(config.width, config.height, config.fps)
+        else RealSenseFrameSource(
+            config.width,
+            config.height,
+            config.fps,
+            serial=config.serial,
+        )
     )
     engine = None
     if config.inference_engine == "mock":

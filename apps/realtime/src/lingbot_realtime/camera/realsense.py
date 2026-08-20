@@ -13,10 +13,18 @@ from lingbot_realtime.domain import CameraIntrinsics, RGBDFrame
 class RealSenseFrameSource:
     """RealSense RGB-D source with depth aligned to the color stream."""
 
-    def __init__(self, width: int = 640, height: int = 480, fps: int = 30) -> None:
+    def __init__(
+        self,
+        width: int = 640,
+        height: int = 480,
+        fps: int = 30,
+        *,
+        serial: str | None = None,
+    ) -> None:
         self.width = int(width)
         self.height = int(height)
         self.fps = int(fps)
+        self.serial = serial
         self._rs: Any = None
         self._pipeline: Any = None
         self._align: Any = None
@@ -74,6 +82,8 @@ class RealSenseFrameSource:
         for width, height, fps in candidates:
             candidate_pipeline = rs.pipeline()
             config = rs.config()
+            if self.serial:
+                config.enable_device(self.serial)
             config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
             config.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
             try:

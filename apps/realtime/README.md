@@ -6,13 +6,20 @@ LingBot-Depth 的连续 RGB-D 推理、WebGL 可视化、录制、snapshot 测�
 
 ## 页面与控制
 
-- `/`：连续 RGB、raw depth、predicted depth 和预测点云主界面。
-- `/pointcloud`：共享相机 worker 的 raw D435 点云。
+- `/`：与 AS-Depth `realtime_d435` 对齐的完整 WebGL 主界面。支持 RGB/raw/pred
+  depth、raw/pred 双点云、2D/3D 布局、点云预算、半径离群点过滤、深度范围与预测百分位、
+  2D 两点测量、自动旋转/轨道动画、全屏和可拖动控制面板。
+- `/pointcloud`：共享相机 worker 的完整 raw D435 点云页，支持 stride、点预算、深度范围、
+  FPS、视角和点大小控制。
 - `/snapshot`：从最新完整预测冻结不可变副本，保留两点测量、重试和逐次持久化。
 - `/status`：相机、模型、FPS、录制和错误状态。
 
 推理速度低于相机速度时不会创建无界队列。worker 每次只发布最新完成结果；WebSocket 使用单帧
 `frame_ack`，每个浏览器最多有一帧在途。
+
+WebGL wire contract 复用参考 pipeline 的 v2 设计：浏览器按当前视图选择是否传输 color、raw、
+pred、raw cloud 和 pred cloud，服务端只编码被选择的数据段；深度在线路上为 `uint16 mm`，模型与
+录制边界仍为 `float32 meter`。前端使用相同的 256 色 Spectral LUT。
 
 ## 安装与测试
 
@@ -20,8 +27,8 @@ LingBot-Depth 的连续 RGB-D 推理、WebGL 可视化、录制、snapshot 测�
 
 ```bash
 conda activate lingbot-depth
-python -m pip install -e "apps/lingbot_realtime[test,realsense,deploy]"
-pytest -q apps/lingbot_realtime/tests
+python -m pip install -e "apps/realtime[test,realsense,deploy]"
+pytest -q apps/realtime/tests
 ```
 
 不连接相机、不下载模型的本地闭环：
@@ -70,6 +77,11 @@ PyTorch，否则为 sensor-only。旧 `--inference-engine mdm|mock` 仍可使用
 - 输入 `rgbd_input: float16 [1,4,480,640]`；RGB 为 `[0,1]`，深度为米，invalid 为 `0`。
 - 输出 `depth: float16 [1,480,640]`；应用边界转换为 float32 米制深度。
 - 1200 tokens、`resolution_level=0`、关闭按深度有效性动态删除 token、保留预测 mask。
+
+MDM 适配与 AS-Depth 模型有一个刻意保留的差异：host 端输入是 RGB `[0,1]` 加米制 depth，
+不做 ImageNet 预归一化，因为 MDM 的 RGB-D encoder 会在模型内部完成该归一化。PyTorch 与
+TensorRT 路径保持同一输入语义，TensorRT 路径复用 `D435HostPreprocessor`，避免双重归一化，
+再把 runner 输入转换为固定 FP16。
 
 导出的图保持 FP16 输入、输出、权重和主要 GEMM/卷积；序列长度固定不做动态 token 删除，
 并用静态 attention key mask 排除无效深度 token。Transformer 的 LayerNorm、Softmax、Add 和
@@ -127,11 +139,13 @@ runtime 加载阶段明确失败。
 --no-auto-connect
 --no-inference
 --preview-fps 15
+--preview-fps 0          # 不额外限速
 --ack-timeout 10
 --cloud-stride 2
 --cloud-point-budget 180000
+--serial <D435_SERIAL>
 --no-record
---record-root apps/lingbot_realtime/runs/recordings
+--record-root apps/realtime/runs/recordings
 --max-record-frames 0
 ```
 
@@ -151,7 +165,7 @@ header 会回填真实帧数，文件可以直接用 `numpy.load` 重新读取�
 snapshot 单次保存使用：
 
 ```bash
-lingbot-realtime ... --save-results --output-root apps/lingbot_realtime/runs
+lingbot-realtime ... --save-results --output-root apps/realtime/runs
 ```
 
 每次 capture 保存 RGB、raw/pred metric depth、深度可视化、PLY、intrinsics、metadata 和测量结果。
@@ -165,7 +179,7 @@ Linux 上安装 `realsense` extra 后，应用会在实际选择 `--source reals
 本机 NVIDIA ARM 环境使用 RSUSB 后端启动，避免 native UVC/V4L2 路径触发 xHCI 故障：
 
 ```bash
-apps/lingbot_realtime/scripts/run_realsense_rsusb.sh
+apps/realtime/scripts/run_realsense_rsusb.sh
 ```
 
 脚本默认使用 `asdepth` Conda 环境、`/home/asdepth/librealsense/build/Release` 和
@@ -189,7 +203,10 @@ macOS 的源码构建与 USB 检查工具仍位于 `scripts/install_pyrealsense2
 ```bash
 LINGBOT_REALTIME_ENGINE=/srv/lingbot/deploy/model.engine \
 LINGBOT_REALTIME_MANIFEST=/srv/lingbot/deploy/deployment.json \
-apps/lingbot_realtime/scripts/run_managed.sh
+apps/realtime/scripts/run_managed.sh
 ```
 
 模型、ONNX、engine、timing cache 和录制目录已在仓库 `.gitignore` 中排除。
+
+本应用只维护本机 PyTorch/TensorRT/RealSense 运行路线；不包含 AS-Depth 的 realtime Docker
+镜像、容器 runner 或源码挂载分支。

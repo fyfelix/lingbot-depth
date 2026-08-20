@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LingBot-Depth RGBD Point Cloud</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #090b0d;
+    --canvas: #040506;
+    --panel: rgba(19, 22, 25, 0.88);
+    --panel-strong: rgba(23, 27, 31, 0.94);
+    --field: rgba(255, 255, 255, 0.045);
+    --line: rgba(255, 255, 255, 0.12);
+    --line-strong: rgba(255, 255, 255, 0.22);
+    --text: #f1f4f6;
+    --muted: #a6afb7;
+    --dim: #6d7881;
+    --accent: #78d69e;
+    --accent-2: #74b8ff;
+    --warn: #f0c46d;
+    --bad: #ff9c9c;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%; margin: 0; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; line-height: 1.35;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  canvas {
+    display: block; width: 100vw; height: 100vh;
+    background: var(--canvas);
+    cursor: grab;
+  }
+  canvas:active { cursor: grabbing; }
+
+  .topbar {
+    position: fixed; inset: 14px 14px auto 14px; z-index: 5;
+    display: flex; align-items: center; gap: 8px;
+    min-width: 0;
+  }
+  .brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    min-height: 36px; padding: 0 12px;
+    border: 1px solid var(--line); background: var(--panel);
+    backdrop-filter: blur(12px); border-radius: 6px;
+    font-weight: 600;
+  }
+  .brand span {
+    color: var(--dim); font-weight: 400; font-family: var(--mono);
+    font-size: 12px;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    min-height: 36px; padding: 0 11px;
+    border: 1px solid var(--line); background: var(--panel);
+    backdrop-filter: blur(12px); border-radius: 6px;
+    color: var(--muted); font-family: var(--mono); font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  a.pill { text-decoration: none; }
+  a.pill:hover { color: var(--accent-2); border-color: rgba(116, 184, 255, 0.45); }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--dim);
+  }
+  .pill.live { color: var(--accent); }
+  .pill.live .dot { background: var(--accent); }
+  .pill.warn { color: var(--warn); }
+  .pill.warn .dot { background: var(--warn); }
+  .pill.bad { color: var(--bad); }
+  .pill.bad .dot { background: var(--bad); }
+
+  .panel {
+    position: fixed; z-index: 5;
+    right: 14px; top: 64px; width: min(360px, calc(100vw - 28px));
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel-strong); backdrop-filter: blur(14px);
+    padding: 12px; display: grid; gap: 12px;
+    box-shadow: 0 20px 70px rgba(0, 0, 0, 0.34);
+  }
+
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  button {
+    height: 36px; border: 1px solid var(--line-strong); border-radius: 4px;
+    color: var(--text); background: var(--field);
+    font: inherit; cursor: pointer;
+    transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+  }
+  button:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.34);
+    background: rgba(255, 255, 255, 0.075);
+  }
+  button:disabled { opacity: 0.42; cursor: not-allowed; }
+  button.primary {
+    color: var(--accent);
+    border-color: rgba(114, 214, 163, 0.38);
+  }
+
+  .section {
+    display: grid; gap: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .section:first-child { padding-top: 0; border-top: 0; }
+  .section-title {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    color: var(--dim); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .control { display: grid; gap: 6px; }
+  .control-row {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  }
+  label {
+    color: var(--muted); font-size: 12px;
+  }
+  output {
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  input[type="range"] {
+    width: 100%; height: 18px; accent-color: var(--accent);
+  }
+
+  .stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .stat {
+    min-width: 0; padding: 8px;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: rgba(255, 255, 255, 0.035);
+  }
+  .stat .k {
+    display: block; color: var(--dim); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .stat .v {
+    display: block; margin-top: 2px; color: var(--text);
+    font-family: var(--mono); font-size: 17px;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .notice {
+    min-height: 18px; color: var(--warn); font-size: 12px;
+    font-family: var(--mono); overflow-wrap: anywhere;
+  }
+  .notice:empty { display: none; }
+
+  .error {
+    color: var(--bad); font-family: var(--mono); font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .error:empty { display: none; }
+
+  @media (max-width: 720px) {
+    .topbar { inset: 10px 10px auto 10px; flex-wrap: wrap; }
+    .brand { width: 100%; }
+    .panel {
+      left: 10px; right: 10px; top: auto; bottom: 10px; width: auto;
+      max-height: 58vh; overflow: auto;
+    }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stat { padding: 6px; }
+    .stat .v { font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+
+  <div class="topbar">
+    <div class="brand">LingBot-Depth <span>RGBD cloud</span></div>
+    <div class="pill" id="state-pill"><span class="dot"></span><span id="state-text">idle</span></div>
+    <div class="pill"><span id="resolution">—</span></div>
+    <a class="pill" href="/">Realtime</a>
+    <a class="pill" href="/snapshot">Snapshot</a>
+  </div>
+
+  <aside class="panel">
+    <div class="section">
+      <div class="section-title"><span>Session</span><span id="payload-rate">—</span></div>
+      <div class="buttons">
+        <button class="primary" id="connect">Connect</button>
+        <button id="reset">Reset View</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title"><span>Render</span></div>
+      <div class="control">
+        <div class="control-row"><label for="point-size">Point size</label><output id="point-size-out">2.0</output></div>
+        <input id="point-size" type="range" min="1" max="6" step="0.25" value="2">
+      </div>
+
+      <div class="control">
+        <div class="control-row"><label for="max-depth">Max depth</label><output id="max-depth-out">6.0 m</output></div>
+        <input id="max-depth" type="range" min="0.5" max="10" step="0.1" value="6">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title"><span>Transport</span></div>
+      <div class="control">
+        <div class="control-row"><label for="stride">Stride</label><output id="stride-out">2</output></div>
+        <input id="stride" type="range" min="1" max="8" step="1" value="2">
+      </div>
+
+      <div class="control">
+        <div class="control-row"><label for="stream-fps">Stream FPS</label><output id="stream-fps-out">15</output></div>
+        <input id="stream-fps" type="range" min="1" max="30" step="1" value="15">
+      </div>
+
+      <div class="control">
+        <div class="control-row"><label for="budget">Point budget</label><output id="budget-out">180k</output></div>
+        <input id="budget" type="range" min="0" max="500000" step="10000" value="180000">
+      </div>
+      <div class="notice" id="notice"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title"><span>Stats</span></div>
+      <div class="stats">
+        <div class="stat"><span class="k">FPS</span><span class="v" id="fps">—</span></div>
+        <div class="stat"><span class="k">Points</span><span class="v" id="points">—</span></div>
+        <div class="stat"><span class="k">Frame</span><span class="v" id="frame">—</span></div>
+        <div class="stat"><span class="k">Bytes</span><span class="v" id="bytes">—</span></div>
+      </div>
+    </div>
+    <div class="error" id="error"></div>
+  </aside>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('gl');
+  const gl = canvas.getContext('webgl', { antialias: false, alpha: false });
+  const els = {
+    connect: $('connect'), reset: $('reset'), statePill: $('state-pill'),
+    stateText: $('state-text'), resolution: $('resolution'), fps: $('fps'),
+    points: $('points'), frame: $('frame'), bytes: $('bytes'), error: $('error'),
+    notice: $('notice'), payloadRate: $('payload-rate'),
+    pointSize: $('point-size'), pointSizeOut: $('point-size-out'),
+    stride: $('stride'), strideOut: $('stride-out'),
+    streamFps: $('stream-fps'), streamFpsOut: $('stream-fps-out'),
+    maxDepth: $('max-depth'), maxDepthOut: $('max-depth-out'),
+    budget: $('budget'), budgetOut: $('budget-out'),
+  };
+
+  if (!gl) {
+    els.error.textContent = 'WebGL unavailable';
+    els.connect.disabled = true;
+    return;
+  }
+
+  const vertexSource = `
+    attribute vec3 aPosition;
+    attribute vec4 aColor;
+    uniform mat4 uMvp;
+    uniform float uPointSize;
+    varying vec4 vColor;
+    void main() {
+      gl_Position = uMvp * vec4(aPosition, 1.0);
+      gl_PointSize = uPointSize;
+      vColor = aColor;
+    }
+  `;
+  const fragmentSource = `
+    precision mediump float;
+    varying vec4 vColor;
+    void main() {
+      vec2 p = gl_PointCoord - vec2(0.5);
+      if (dot(p, p) > 0.25) discard;
+      gl_FragColor = vColor;
+    }
+  `;
+
+  function compile(type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      throw new Error(gl.getShaderInfoLog(shader) || 'shader compile failed');
+    }
+    return shader;
+  }
+
+  const program = gl.createProgram();
+  gl.attachShader(program, compile(gl.VERTEX_SHADER, vertexSource));
+  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragmentSource));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(program) || 'program link failed');
+  }
+  gl.useProgram(program);
+
+  const loc = {
+    position: gl.getAttribLocation(program, 'aPosition'),
+    color: gl.getAttribLocation(program, 'aColor'),
+    mvp: gl.getUniformLocation(program, 'uMvp'),
+    pointSize: gl.getUniformLocation(program, 'uPointSize'),
+  };
+  const pointBuffer = gl.createBuffer();
+  let pointCount = 0;
+  let ws = null;
+  let connected = false;
+  let expectPayload = false;
+  let pendingReconnect = false;
+
+  const view = {
+    yaw: 0,
+    pitch: -0.18,
+    distance: 2.6,
+    panX: 0,
+    panY: 0,
+  };
+
+  const fmtInt = (n) => Number(n || 0).toLocaleString();
+  const fmtBytes = (n) => {
+    n = Number(n || 0);
+    if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`;
+    if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${n} B`;
+  };
+  const fmtBudget = (n) => Number(n) === 0 ? 'off' : `${Math.round(Number(n) / 1000)}k`;
+  const estimateBytesPerSec = () => {
+    const budget = Number(els.budget.value);
+    const fps = Number(els.streamFps.value);
+    if (!budget || !fps) return 0;
+    return budget * 16 * fps;
+  };
+
+  function setState(kind, text) {
+    els.statePill.classList.remove('live', 'warn', 'bad');
+    if (kind) els.statePill.classList.add(kind);
+    els.stateText.textContent = text;
+  }
+
+  function syncOutputs() {
+    els.pointSizeOut.textContent = Number(els.pointSize.value).toFixed(1);
+    els.strideOut.textContent = els.stride.value;
+    els.maxDepthOut.textContent = `${Number(els.maxDepth.value).toFixed(1)} m`;
+    els.streamFpsOut.textContent = els.streamFps.value;
+    els.budgetOut.textContent = fmtBudget(els.budget.value);
+    els.payloadRate.textContent = estimateBytesPerSec()
+      ? `${fmtBytes(estimateBytesPerSec())}/s`
+      : 'uncapped';
+    const stride = Number(els.stride.value);
+    const budget = Number(els.budget.value);
+    const streamFps = Number(els.streamFps.value);
+    els.notice.textContent =
+      (stride === 1 && budget >= 160000 && streamFps >= 15)
+        ? 'High payload: reduce budget or FPS if the stream stalls.'
+        : '';
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+    const h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    gl.viewport(0, 0, w, h);
+  }
+
+  function mat4Perspective(fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2);
+    const nf = 1 / (near - far);
+    return new Float32Array([
+      f / aspect, 0, 0, 0,
+      0, f, 0, 0,
+      0, 0, (far + near) * nf, -1,
+      0, 0, (2 * far * near) * nf, 0,
+    ]);
+  }
+
+  function mat4Multiply(a, b) {
+    const out = new Float32Array(16);
+    for (let c = 0; c < 4; c++) {
+      for (let r = 0; r < 4; r++) {
+        out[c * 4 + r] =
+          a[0 * 4 + r] * b[c * 4 + 0] +
+          a[1 * 4 + r] * b[c * 4 + 1] +
+          a[2 * 4 + r] * b[c * 4 + 2] +
+          a[3 * 4 + r] * b[c * 4 + 3];
+      }
+    }
+    return out;
+  }
+
+  function mat4Translate(x, y, z) {
+    return new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      x, y, z, 1,
+    ]);
+  }
+
+  function mat4RotateX(a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return new Float32Array([
+      1, 0, 0, 0,
+      0, c, s, 0,
+      0, -s, c, 0,
+      0, 0, 0, 1,
+    ]);
+  }
+
+  function mat4RotateY(a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return new Float32Array([
+      c, 0, -s, 0,
+      0, 1, 0, 0,
+      s, 0, c, 0,
+      0, 0, 0, 1,
+    ]);
+  }
+
+  function draw() {
+    resize();
+    gl.clearColor(0.02, 0.023, 0.027, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    const aspect = canvas.width / Math.max(1, canvas.height);
+    const proj = mat4Perspective(58 * Math.PI / 180, aspect, 0.02, 30);
+    const camera = mat4Translate(view.panX, view.panY, -view.distance);
+    const rx = mat4RotateX(view.pitch);
+    const ry = mat4RotateY(view.yaw);
+    const model = mat4Multiply(ry, rx);
+    const mvp = mat4Multiply(proj, mat4Multiply(camera, model));
+
+    gl.useProgram(program);
+    gl.uniformMatrix4fv(loc.mvp, false, mvp);
+    gl.uniform1f(loc.pointSize, Number(els.pointSize.value));
+    gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
+    gl.enableVertexAttribArray(loc.position);
+    gl.vertexAttribPointer(loc.position, 3, gl.FLOAT, false, 16, 0);
+    gl.enableVertexAttribArray(loc.color);
+    gl.vertexAttribPointer(loc.color, 4, gl.UNSIGNED_BYTE, true, 16, 12);
+    if (pointCount > 0) gl.drawArrays(gl.POINTS, 0, pointCount);
+    requestAnimationFrame(draw);
+  }
+
+  function wsUrl() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const params = new URLSearchParams({
+      stride: els.stride.value,
+      max_depth: els.maxDepth.value,
+      point_budget: els.budget.value,
+      stream_fps: els.streamFps.value,
+    });
+    return `${proto}//${location.host}/ws/pointcloud?${params.toString()}`;
+  }
+
+  function connect() {
+    if (ws) {
+      pendingReconnect = false;
+      ws.close();
+      return;
+    }
+    els.error.textContent = '';
+    setState('warn', 'connecting');
+    els.connect.textContent = 'Disconnect';
+    ws = new WebSocket(wsUrl());
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => {
+      connected = true;
+      setState('live', 'live');
+    };
+    ws.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'ready') {
+          els.resolution.textContent = `${msg.width}x${msg.height}`;
+        } else if (msg.type === 'frame') {
+          expectPayload = true;
+          pointCount = msg.points || 0;
+          els.fps.textContent = Number(msg.fps || 0).toFixed(1);
+          els.points.textContent = fmtInt(pointCount);
+          els.frame.textContent = fmtInt(msg.frame);
+          els.bytes.textContent = fmtBytes(msg.bytes);
+        } else if (msg.type === 'drop') {
+          setState('warn', 'drop');
+          els.error.textContent = msg.message || '';
+        } else if (msg.type === 'error') {
+          setState('bad', 'error');
+          els.error.textContent = msg.message || 'stream error';
+        }
+        return;
+      }
+      if (!expectPayload) return;
+      expectPayload = false;
+      gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, event.data, gl.DYNAMIC_DRAW);
+    };
+    ws.onerror = () => {
+      setState('bad', 'error');
+      els.error.textContent = 'websocket error';
+    };
+    ws.onclose = () => {
+      const shouldReconnect = pendingReconnect;
+      pendingReconnect = false;
+      ws = null;
+      connected = false;
+      expectPayload = false;
+      els.connect.textContent = 'Connect';
+      if (shouldReconnect) {
+        setState('warn', 'connecting');
+        setTimeout(connect, 80);
+      } else {
+        setState('', 'idle');
+      }
+    };
+  }
+
+  let drag = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    drag = {
+      x: e.clientX, y: e.clientY,
+      button: e.button,
+      pan: e.shiftKey || e.button === 1,
+    };
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    if (drag.pan) {
+      const s = view.distance * 0.0012;
+      view.panX += dx * s;
+      view.panY -= dy * s;
+    } else {
+      view.yaw += dx * 0.006;
+      view.pitch = Math.max(-1.45, Math.min(1.45, view.pitch + dy * 0.006));
+    }
+  });
+  canvas.addEventListener('pointerup', () => { drag = null; });
+  canvas.addEventListener('pointercancel', () => { drag = null; });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    view.distance = Math.max(0.25, Math.min(12, view.distance * Math.exp(e.deltaY * 0.001)));
+  }, { passive: false });
+
+  function resetView() {
+    view.yaw = 0;
+    view.pitch = -0.18;
+    view.distance = 2.6;
+    view.panX = 0;
+    view.panY = 0;
+  }
+
+  let reconnectTimer = null;
+  function reconnectSoon() {
+    syncOutputs();
+    if (!connected) return;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      setState('warn', 'reconnecting');
+      pendingReconnect = true;
+      if (ws) {
+        ws.close();
+      } else {
+        connect();
+      }
+    }, 240);
+  }
+
+  els.connect.addEventListener('click', connect);
+  els.reset.addEventListener('click', resetView);
+  els.pointSize.addEventListener('input', syncOutputs);
+  for (const el of [els.stride, els.maxDepth, els.streamFps, els.budget]) {
+    el.addEventListener('input', reconnectSoon);
+  }
+
+  syncOutputs();
+  resetView();
+  draw();
+})();
+</script>
+</body>
+</html>

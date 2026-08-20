@@ -76,6 +76,7 @@ class RuntimeController:
         self._condition = threading.Condition()
         self._phase = Phase.STARTING
         self._revision = 0
+        self._inference_revision = 0
         self._publication_id = 0
         self._latest_frame: RGBDFrame | None = None
         self._latest_prediction: PredictionPacket | None = None
@@ -99,6 +100,8 @@ class RuntimeController:
         self._stop_requested = False
         self._quit_requested = False
         self._started = False
+        self._started_at = time.time()
+        self._camera_started_at = 0.0
         self._camera_thread: threading.Thread | None = None
         self._model_thread: threading.Thread | None = None
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="snapshot")
@@ -139,7 +142,9 @@ class RuntimeController:
             with self._condition:
                 self._model_status = "error"
                 self._model_error = str(exc) or exc.__class__.__name__
-                self._inference_enabled = False
+                if self._inference_enabled:
+                    self._inference_enabled = False
+                    self._inference_revision += 1
                 self._touch_locked()
             return
         with self._condition:
@@ -180,10 +185,16 @@ class RuntimeController:
                 raise RuntimeConflict("Cannot switch inference while recording is active")
             if enabled and (self.engine is None or self._model_status != "ready"):
                 raise RuntimeConflict("No ready model runtime is loaded")
-            self._inference_enabled = bool(enabled)
-            self._latest_prediction = None
-            self._publication_id += 1
-            self._touch_locked()
+            next_enabled = bool(enabled)
+            if self._inference_enabled != next_enabled:
+                self._inference_enabled = next_enabled
+                self._inference_revision += 1
+                self._latest_prediction = None
+                self._publication_id += 1
+                self._inference_fps = 0.0
+                self._inference_avg_fps = 0.0
+                self._inference_window_fps = 0.0
+                self._touch_locked()
             return self._status_locked()
 
     def _new_recorder(self) -> Recorder:
@@ -283,6 +294,7 @@ class RuntimeController:
                     e2e_tracker.reset()
                     with self._condition:
                         self._camera_status = "running"
+                        self._camera_started_at = time.time()
                         self._touch_locked()
                 started = time.perf_counter()
                 frame = self.source.read(timeout_sec=self.config.camera_read_timeout_sec)
@@ -297,7 +309,9 @@ class RuntimeController:
                         with self._condition:
                             self._model_status = "error"
                             self._model_error = str(exc) or exc.__class__.__name__
-                            self._inference_enabled = False
+                            if self._inference_enabled:
+                                self._inference_enabled = False
+                                self._inference_revision += 1
                             self._record_on = False
                             failed_recorder, self._recorder = self._recorder, None
                             self._touch_locked()
@@ -389,15 +403,18 @@ class RuntimeController:
                 source_active = False
                 with self._condition:
                     self._camera_status = "stopped" if self._stop_requested else "idle"
+                    self._camera_started_at = 0.0
                     self._touch_locked()
         if source_active:
             with suppress(Exception):
                 self.source.stop()
         with self._condition:
             self._camera_status = "stopped"
+            self._camera_started_at = 0.0
             self._touch_locked()
 
     def _status_locked(self) -> dict[str, Any]:
+        now = time.time()
         capture = self._active_capture
         visible_frame = self._latest_frame
         if self._inference_enabled and self._model_status == "ready":
@@ -429,6 +446,7 @@ class RuntimeController:
             "intrinsics": visible_frame.intrinsics.to_dict() if visible_frame else None,
             "capture": capture.to_dict() if capture is not None else None,
             "inference_enabled": self._inference_enabled,
+            "inference_revision": self._inference_revision,
             "inference_fps": round(self._inference_fps, 2),
             "inference_avg_fps": round(self._inference_avg_fps, 2),
             "inference_window_fps": round(self._inference_window_fps, 2),
@@ -440,6 +458,13 @@ class RuntimeController:
             "record_on": self._record_on,
             "saved": self._saved,
             "session_dir": self._record_session_dir,
+            "last_error": self._camera_error or self._model_error or "",
+            "is_disp": False,
+            "uptime_sec": round(now - self._started_at, 1),
+            "camera_uptime_sec": round(
+                now - self._camera_started_at if self._camera_started_at else 0.0,
+                1,
+            ),
             "quit_requested": self._quit_requested,
             "save_results": self.persistence.enabled,
             "stream_url": "/ws/realtime",
@@ -486,12 +511,21 @@ class RuntimeController:
                 "e2e_avg_fps": round(self._e2e_avg_fps, 2),
                 "e2e_window_fps": round(self._e2e_window_fps, 2),
                 "inference_enabled": self._inference_enabled,
-                "pred_depth_source": self.engine.name if self.engine is not None else None,
+                "inference_revision": self._inference_revision,
+                "pred_depth_source": (
+                    self.engine.name
+                    if self.engine is not None and packet.result is not None
+                    else None
+                ),
                 "record_on": self._record_on,
                 "saved": self._saved,
                 "intrinsics": packet.frame.intrinsics.to_dict(),
             }
             return self._publication_id, packet, fields
+
+    def stream_should_end(self) -> bool:
+        with self._condition:
+            return self._quit_requested or self._camera_status not in {"connecting", "running"}
 
     def latest_frame_packet(self) -> PredictionPacket | None:
         with self._condition:

@@ -238,6 +238,7 @@
     }
 
     function consumePacket(header, buffer) {
+      if (header.status) applyStatus(header.status);
       state.intrinsics = header.intrinsics;
       state.depthScaleM = Number((header.raw_depth && header.raw_depth.scale_m) || header.depth_scale_m || 0.001);
       const colorSpec = header.color; state.height = colorSpec.shape[0]; state.width = colorSpec.shape[1];

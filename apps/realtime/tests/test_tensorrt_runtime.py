@@ -37,6 +37,9 @@ def test_tensorrt_fake_runner_uses_fp16_fixed_contract(tmp_path) -> None:
     source.stop()
     assert runner.last_input.shape == (1, 4, 480, 640)
     assert runner.last_input.dtype == np.float16
+    assert float(runner.last_input[:, :3].min()) >= 0.0
+    assert float(runner.last_input[:, :3].max()) <= 1.0
+    assert float(runner.last_input[:, 3].max()) <= engine.max_depth_m
     assert result.pred_depth_m.shape == (24, 32)
     assert result.pred_depth_m.dtype == np.float32
     engine.close()

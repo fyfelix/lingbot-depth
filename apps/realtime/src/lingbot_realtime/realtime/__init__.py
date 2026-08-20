@@ -1,6 +1,11 @@
 """Reusable continuous RGB-D packet, preprocessing and recording primitives."""
 
-from .packets import FramePacket, PredictionPacket
+from .packets import (
+    FramePacket,
+    PredictionPacket,
+    RealtimePostprocessor,
+    RealtimePreprocessor,
+)
 from .pipeline import MetricDepthPostprocessor, RealtimePipeline
 from .preprocess import D435HostPreprocessor
 from .publishers import WebFrame, WebPublisher
@@ -12,6 +17,8 @@ __all__ = [
     "MetricDepthPostprocessor",
     "PredictionPacket",
     "RealtimePipeline",
+    "RealtimePostprocessor",
+    "RealtimePreprocessor",
     "Recorder",
     "SessionPaths",
     "StreamingNpyWriter",

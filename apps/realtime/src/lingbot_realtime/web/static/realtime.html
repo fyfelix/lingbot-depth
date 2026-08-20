@@ -1,0 +1,2873 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- inline depth-gradient favicon (no external file / server route) -->
+<link rel="icon" type="image/svg+xml" sizes="any" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Cdefs%3E%3ClinearGradient%20id='g'%20x1='0'%20y1='0'%20x2='1'%20y2='1'%3E%3Cstop%20offset='0'%20stop-color='%237dd3fc'/%3E%3Cstop%20offset='1'%20stop-color='%230b2438'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect%20x='4'%20y='4'%20width='56'%20height='56'%20rx='15'%20fill='url(%23g)'/%3E%3C/svg%3E">
+<title>LingBot-Depth Realtime WebGL</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0d0d10;
+    --panel: rgba(22, 22, 25, 0.92);
+    --panel-2: rgba(29, 29, 34, 0.92);
+    --line: rgba(255,255,255,0.13);
+    --line-strong: rgba(255,255,255,0.25);
+    --text: #e8e8ec;
+    --muted: #a0a0aa;
+    --dim: #6f6f78;
+    --accent: #7dd3fc;
+    --ok: #86efac;
+    --rec: #fca5a5;
+    --warn: #fcd34d;
+    --bad: #ff9c9c;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; margin: 0; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px; line-height: 1.35;
+  }
+  canvas {
+    display: block; width: 100vw; height: 100vh;
+    background: #030405;
+  }
+  .topbar {
+    position: fixed; left: 12px; top: 12px; right: 12px; z-index: 5;
+    display: flex; align-items: center; gap: 8px; pointer-events: none;
+  }
+  .brand, .pill {
+    min-height: 34px; display: inline-flex; align-items: center; gap: 8px;
+    padding: 0 11px; border: 1px solid var(--line);
+    background: var(--panel); backdrop-filter: blur(12px); border-radius: 6px;
+    pointer-events: auto;
+  }
+  .brand { font-weight: 600; }
+  .brand span { color: var(--dim); font-family: var(--mono); font-size: 12px; font-weight: 400; }
+  .pill { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  a.pill { text-decoration: none; }
+  a.pill:hover { color: var(--accent); border-color: rgba(125,211,252,.45); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+  .pill.live { color: var(--ok); }
+  .pill.live .dot { background: var(--ok); }
+  .pill.warn { color: var(--warn); }
+  .pill.warn .dot { background: var(--warn); }
+  .pill.bad { color: var(--bad); }
+  .pill.bad .dot { background: var(--bad); }
+  .fps-hud {
+    display: flex; align-items: stretch; gap: 6px;
+    pointer-events: auto;
+  }
+  .fps-chip {
+    min-height: 34px; min-width: 88px; padding: 5px 9px;
+    display: grid; align-content: center; gap: 1px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(22, 22, 25, 0.58);
+    backdrop-filter: blur(12px);
+  }
+  .fps-chip .k {
+    color: var(--dim); font-size: 9px; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+  }
+  .fps-chip .v {
+    color: var(--text); font-family: var(--mono); font-size: 13px;
+  }
+  .spacer { flex: 1; }
+  body.measure-active canvas { cursor: crosshair; }
+  .panel {
+    position: fixed; z-index: 6; right: 12px; top: 100px;
+    width: min(390px, calc(100vw - 24px)); max-height: calc(100vh - 112px);
+    display: flex; flex-direction: column; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); backdrop-filter: blur(14px);
+    box-shadow: 0 20px 70px rgba(0,0,0,0.35);
+  }
+  .panel-body {
+    flex: 1 1 auto; min-height: 0;
+    overflow: auto; padding: 12px; display: grid; gap: 12px;
+  }
+  .panel-header {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+    cursor: grab; user-select: none; touch-action: none;
+  }
+  .panel-header:active { cursor: grabbing; }
+  .panel-header-title {
+    color: var(--muted); font-size: 10px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase;
+  }
+  .panel-min-btn {
+    width: 28px; height: 28px; min-height: 28px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: rgba(255,255,255,0.045); cursor: pointer;
+  }
+  .panel-min-btn:hover { background: rgba(255,255,255,0.1); }
+  .panel-min-btn:focus-visible {
+    outline: 2px solid rgba(125,211,252,.75); outline-offset: 2px;
+  }
+  .panel-min-btn svg {
+    width: 16px; height: 16px; stroke: var(--text); stroke-width: 1.9;
+    stroke-linecap: round; stroke-linejoin: round; fill: none;
+  }
+  .panel-fab {
+    position: fixed; z-index: 7; right: 16px; top: 108px;
+    width: 28px; height: 28px; min-width: 28px; min-height: 28px; padding: 0;
+    display: none; align-items: center; justify-content: center;
+    border: 1px solid var(--line-strong); border-radius: 6px;
+    background: var(--panel); backdrop-filter: blur(14px);
+    box-shadow: 0 10px 32px rgba(0,0,0,0.32);
+    cursor: grab; touch-action: none;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .panel-fab:active { cursor: grabbing; }
+  .panel-fab:hover {
+    background: var(--panel-2);
+    border-color: rgba(255,255,255,0.38);
+  }
+  .panel-fab:focus-visible {
+    outline: 2px solid rgba(125,211,252,.75);
+    outline-offset: 2px;
+  }
+  .panel-fab svg {
+    width: 16px; height: 16px;
+    stroke: var(--text); stroke-width: 1.9;
+    stroke-linecap: round; stroke-linejoin: round;
+    fill: none;
+  }
+  body.panel-min #control-panel { display: none; }
+  body.panel-min .panel-fab { display: inline-flex; }
+  .section { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .section:first-child { padding-top: 0; border-top: 0; }
+  .section-title {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    color: var(--dim); font-size: 10px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase;
+    cursor: pointer; user-select: none;
+  }
+  .section-title::before { content: "-"; width: 12px; color: var(--accent); font-family: var(--mono); }
+  .section-title span:first-child { flex: 1; min-width: 0; }
+  .section.collapsed > :not(.section-title) { display: none; }
+  .section.collapsed .section-title::before { content: "+"; }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  button {
+    min-height: 34px; border: 1px solid var(--line-strong); border-radius: 4px;
+    color: var(--text); background: rgba(255,255,255,0.045);
+    font: inherit; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: rgba(255,255,255,0.08); }
+  button:disabled { opacity: .42; cursor: not-allowed; }
+  button.primary { color: var(--accent); border-color: rgba(125,211,252,.38); }
+  button.recording { color: var(--rec); border-color: rgba(252,165,165,.42); }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 10px; }
+  label.check { display: flex; align-items: center; gap: 7px; color: var(--muted); }
+  input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); }
+  .control { display: grid; gap: 5px; }
+  .control-row { display: flex; justify-content: space-between; gap: 10px; }
+  .control-row label { min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .control-value { display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px; min-width: 148px; }
+  output, .mono { color: var(--text); font-family: var(--mono); font-size: 12px; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  input[type="number"], select {
+    width: 76px; min-height: 26px; padding: 3px 6px;
+    border: 1px solid var(--line); border-radius: 4px;
+    color: var(--text); background: rgba(255,255,255,0.045);
+    font: 12px var(--mono);
+  }
+  select { width: 126px; color-scheme: dark; }
+  input[type="number"]:focus, select:focus { outline: 1px solid rgba(125,211,252,.5); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(86px, 1fr)); gap: 8px; }
+  .stat {
+    min-width: 0; padding: 8px; border: 1px solid var(--line);
+    border-radius: 4px; background: rgba(255,255,255,0.035);
+  }
+  .stat[title] { cursor: help; }
+  .stat .k { display: block; color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+  .stat .v { display: block; margin-top: 2px; color: var(--text); font-family: var(--mono); font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .labels { position: fixed; inset: 0; pointer-events: none; z-index: 4; }
+  .label {
+    position: absolute; padding: 4px 8px; border: 1px solid var(--line);
+    border-radius: 4px; background: rgba(0,0,0,.55);
+    color: var(--text); font-family: var(--mono); font-size: 11px;
+  }
+  .measure-svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    overflow: visible; pointer-events: none;
+  }
+  .measure-line,
+  .measure-cap {
+    stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round;
+    filter: drop-shadow(0 1px 4px rgba(0,0,0,.7));
+  }
+  .measure-cap {
+    stroke-width: 2; stroke-dasharray: 5 4;
+  }
+  .measure-point {
+    position: absolute; width: 16px; height: 16px; border-radius: 50%;
+    transform: translate(-50%, -50%);
+    border: 2px solid var(--accent); background: rgba(3,4,5,.7);
+    box-shadow: 0 0 0 3px rgba(125,211,252,.18), 0 2px 10px rgba(0,0,0,.55);
+  }
+  .measure-point.invalid {
+    border-color: var(--bad);
+    box-shadow: 0 0 0 3px rgba(255,156,156,.16), 0 2px 10px rgba(0,0,0,.55);
+  }
+  .measure-label {
+    border-color: rgba(125,211,252,.45); background: rgba(0,0,0,.68);
+    color: var(--accent); font-size: 12px; white-space: nowrap;
+  }
+  .measure-label-movable {
+    pointer-events: auto; cursor: move;
+    user-select: none; touch-action: none;
+  }
+  .measure-label .measure-del {
+    pointer-events: auto; cursor: pointer;
+    width: 16px; height: 16px; min-height: 0; min-width: 0; padding: 0;
+    margin-left: 7px; vertical-align: middle;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid rgba(252,165,165,.5); border-radius: 50%;
+    background: rgba(0,0,0,.4); color: var(--bad);
+    font: 13px/1 var(--mono);
+  }
+  .measure-label .measure-del:hover {
+    background: rgba(252,165,165,.22); border-color: var(--bad); color: var(--bad);
+  }
+  .notice { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--warn); font-family: var(--mono); overflow-wrap: anywhere; }
+  .notice-action { min-height: 26px; padding: 3px 8px; color: var(--warn); border-color: rgba(253,186,116,.45); font-family: var(--mono); font-size: 12px; }
+  .error { color: var(--bad); font-family: var(--mono); overflow-wrap: anywhere; }
+  .notice[hidden], .notice-action[hidden], .error:empty { display: none; }
+  @media (max-width: 760px) {
+    .topbar { flex-wrap: wrap; }
+    .brand { width: 100%; }
+    .fps-hud { width: 100%; }
+    .fps-chip { flex: 1; min-width: 0; }
+    .panel { left: 10px; right: 10px; top: auto; bottom: 10px; width: auto; max-height: 56vh; }
+    .panel-fab { right: 12px; bottom: 12px; }
+    .buttons { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="labels" id="labels"></div>
+<div class="topbar">
+  <div class="brand">LingBot-Depth <span>WebGL realtime</span></div>
+  <div class="pill" id="conn-pill"><span class="dot"></span><span id="conn-text">idle</span></div>
+  <div class="pill"><span id="res-text">--</span></div>
+  <a class="pill" href="/pointcloud">Raw cloud</a>
+  <a class="pill" href="/snapshot">Snapshot</a>
+  <div class="spacer"></div>
+  <div class="fps-hud" aria-label="Realtime FPS">
+    <div class="fps-chip"><span class="k">Server FPS</span><span class="v" id="hud-server-fps">--</span></div>
+    <div class="fps-chip"><span class="k">Runner FPS</span><span class="v" id="hud-runner-fps">--</span></div>
+    <div class="fps-chip"><span class="k">Display FPS</span><span class="v" id="hud-display-fps">--</span></div>
+  </div>
+</div>
+<button class="panel-fab" id="panel-fab" type="button" aria-controls="control-panel" aria-label="Show controls" title="Show controls">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+</button>
+<aside class="panel" id="control-panel">
+  <div class="panel-header" id="panel-header">
+    <span class="panel-header-title">Controls</span>
+    <button class="panel-min-btn" id="btn-panel-min" type="button" aria-controls="control-panel" aria-label="Minimize controls" title="Minimize">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>
+    </button>
+  </div>
+  <div class="panel-body">
+  <div class="section">
+    <div class="section-title"><span>Session</span><span id="payload-rate">--</span></div>
+    <div class="buttons">
+      <button class="primary" id="btn-connect" aria-label="Connect camera">Connect</button>
+      <button id="btn-record">Record</button>
+      <button id="btn-quit">Quit</button>
+      <button id="btn-reset">Reset 3D</button>
+      <button id="btn-reset-sliders">Reset sliders</button>
+      <button id="btn-fullscreen">Fullscreen</button>
+    </div>
+    <div class="checks">
+      <label class="check"><input id="inference-enabled" type="checkbox" checked>Inference</label>
+    </div>
+    <div class="notice" id="notice" hidden><span id="notice-text"></span><button class="notice-action" id="btn-use-effective-stride" type="button" hidden></button></div>
+    <div class="error" id="error"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>Stats</span></div>
+    <div class="stats">
+      <div class="stat" title="Recent-window server worker throughput from latest aligned frame to published result. Does not include browser rendering or network display."><span class="k">Server FPS</span><span class="v" id="server-fps">--</span></div>
+      <div class="stat" title="Recent-window runner throughput for infer_fn: preprocessing, TensorRT execution, synchronization, and output copy."><span class="k">Runner FPS</span><span class="v" id="runner-fps">--</span></div>
+      <div class="stat" title="Recent-window browser-side new-frame display rate: WebSocket payload consumed, textures uploaded, and a new frame drawn."><span class="k">Display FPS</span><span class="v" id="display-fps">--</span></div>
+      <div class="stat" title="Browser requestAnimationFrame render loop rate. This may exceed stream FPS when the camera or model publishes fewer frames."><span class="k">Render FPS</span><span class="v" id="render-fps">--</span></div>
+      <div class="stat" title="GPU time for the 5x5 joint bilateral prediction-depth upscale pass."><span class="k">Upscale GPU ms</span><span class="v" id="upscale-ms">--</span></div>
+      <div class="stat"><span class="k">Frame</span><span class="v" id="frame">--</span></div>
+      <div class="stat"><span class="k">Bytes</span><span class="v" id="bytes">--</span></div>
+      <div class="stat"><span class="k">Raw pts</span><span class="v" id="raw-points">--</span></div>
+      <div class="stat"><span class="k">Pred pts</span><span class="v" id="pred-points">--</span></div>
+    </div>
+    <div class="mono" id="session">(no recording)</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>Views</span></div>
+    <div class="checks">
+      <label class="check"><input id="show-rgb" type="checkbox" checked>2D RGB</label>
+      <label class="check"><input id="show-raw" type="checkbox" checked>2D Raw depth</label>
+      <label class="check"><input id="show-pred" type="checkbox" checked>2D Pred depth</label>
+      <label class="check"><input id="show-raw-cloud" type="checkbox">3D Raw+RGB</label>
+      <label class="check"><input id="show-pred-cloud" type="checkbox" checked>3D Pred+RGB</label>
+      <label class="check"><input id="pred-auto" type="checkbox" checked>Pred percentile</label>
+    </div>
+  </div>
+
+  <div class="section collapsed">
+    <div class="section-title"><span>Measure</span><span id="measure-readout">--</span></div>
+    <div class="checks">
+      <label class="check"><input id="measure-enabled" type="checkbox">2D measure (M to mark)</label>
+    </div>
+    <div class="buttons">
+      <button id="btn-measure-clear" type="button">Clear</button>
+    </div>
+    <div class="mono" id="measure-status">off</div>
+  </div>
+
+  <div class="section collapsed">
+    <div class="section-title"><span>3D Orbit</span></div>
+    <div class="buttons">
+      <button id="btn-orbit" type="button">Orbit ▶</button>
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="orbit-mode">Orbit mode</label><span class="control-value"><select id="orbit-mode"><option value="ellipse">ellipse</option><option value="swing">swing</option><option value="horizontal">horizontal</option><option value="vertical">vertical</option></select></span></div>
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="orbit-amp-x">Orbit X° (pitch)</label><span class="control-value"><output id="orbit-amp-x-out">5 deg</output><input id="orbit-amp-x-num" type="number" min="0" max="45" step="1" value="5"></span></div>
+      <input id="orbit-amp-x" type="range" min="0" max="45" step="1" value="5">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="orbit-amp-y">Orbit Y° (yaw)</label><span class="control-value"><output id="orbit-amp-y-out">4 deg</output><input id="orbit-amp-y-num" type="number" min="0" max="90" step="1" value="4"></span></div>
+      <input id="orbit-amp-y" type="range" min="0" max="90" step="1" value="4">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="orbit-period">Period</label><span class="control-value"><output id="orbit-period-out">6.0 s</output><input id="orbit-period-num" type="number" min="1" max="30" step="0.5" value="6"></span></div>
+      <input id="orbit-period" type="range" min="1" max="30" step="0.5" value="6">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="orbit-loops">Loops</label><span class="control-value"><output id="orbit-loops-out">1</output><input id="orbit-loops-num" type="number" min="1" max="20" step="1" value="1"></span></div>
+      <input id="orbit-loops" type="range" min="1" max="20" step="1" value="1">
+    </div>
+    <div class="checks">
+      <label class="check"><input id="orbit-forever" type="checkbox">Loop forever (一直转)</label>
+    </div>
+  </div>
+
+  <div class="section collapsed">
+    <div class="section-title"><span>3D Cloud</span></div>
+    <div class="control">
+      <div class="control-row"><label for="point-size">Point size</label><span class="control-value"><output id="point-size-out">2.0</output><input id="point-size-num" type="number" min="1" max="7" step="0.25" value="2"></span></div>
+      <input id="point-size" type="range" min="1" max="7" step="0.25" value="2">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="point-stride">Stride</label><span class="control-value"><output id="point-stride-out">2</output><input id="point-stride-num" type="number" min="1" max="12" step="1" value="2"></span></div>
+      <input id="point-stride" type="range" min="1" max="12" step="1" value="2">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="point-budget">Point budget / cloud</label><span class="control-value"><output id="point-budget-out">180k</output><input id="point-budget-num" type="number" min="0" max="500000" step="10000" value="180000"></span></div>
+      <input id="point-budget" type="range" min="0" max="500000" step="10000" value="180000">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="cloud-max">Cloud max depth</label><span class="control-value"><output id="cloud-max-out">6.0 m</output><input id="cloud-max-num" type="number" min="0.5" max="10" step="0.1" value="6"></span></div>
+      <input id="cloud-max" type="range" min="0.5" max="10" step="0.1" value="6">
+    </div>
+    <div class="checks">
+      <label class="check"><input id="cloud-outlier" type="checkbox" checked>Outlier removal (ROR)</label>
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="outlier-radius">Outlier radius</label><span class="control-value"><output id="outlier-radius-out">1</output><input id="outlier-radius-num" type="number" min="1" max="3" step="1" value="1"></span></div>
+      <input id="outlier-radius" type="range" min="1" max="3" step="1" value="1">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="outlier-depth-tol">Outlier depth tol</label><span class="control-value"><output id="outlier-depth-tol-out">0.05 m</output><input id="outlier-depth-tol-num" type="number" min="0.01" max="0.5" step="0.01" value="0.05"></span></div>
+      <input id="outlier-depth-tol" type="range" min="0.01" max="0.5" step="0.01" value="0.05">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="outlier-min-pts">Outlier min pts</label><span class="control-value"><output id="outlier-min-pts-out">5</output><input id="outlier-min-pts-num" type="number" min="1" max="20" step="1" value="5"></span></div>
+      <input id="outlier-min-pts" type="range" min="1" max="20" step="1" value="5">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="cloud-yaw">View yaw</label><span class="control-value"><output id="cloud-yaw-out">4 deg</output><input id="cloud-yaw-num" type="number" min="-180" max="180" step="1" value="4"></span></div>
+      <input id="cloud-yaw" type="range" min="-180" max="180" step="1" value="4">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="cloud-pitch">View pitch</label><span class="control-value"><output id="cloud-pitch-out">5 deg</output><input id="cloud-pitch-num" type="number" min="-80" max="80" step="1" value="5"></span></div>
+      <input id="cloud-pitch" type="range" min="-80" max="80" step="1" value="5">
+    </div>
+    <div class="checks">
+      <label class="check"><input id="auto-rotate" type="checkbox">Auto rotate</label>
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="rotate-speed">Rotate speed</label><span class="control-value"><output id="rotate-speed-out">0 deg/s</output><input id="rotate-speed-num" type="number" min="-90" max="90" step="1" value="0"></span></div>
+      <input id="rotate-speed" type="range" min="-90" max="90" step="1" value="0">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="stream-fps">Stream FPS</label><span class="control-value"><output id="stream-fps-out">0</output><input id="stream-fps-num" type="number" min="0" max="60" step="1" value="0"></span></div>
+      <input id="stream-fps" type="range" min="0" max="60" step="1" value="0">
+    </div>
+  </div>
+
+  <div class="section collapsed">
+    <div class="section-title"><span>Depth Color</span><span>LingBot Spectral</span></div>
+    <div class="control">
+      <div class="control-row"><label for="raw-min">Raw min</label><span class="control-value"><output id="raw-min-out">0.10 m</output><input id="raw-min-num" type="number" min="0" max="3" step="0.01" value="0.10"></span></div>
+      <input id="raw-min" type="range" min="0" max="3" step="0.01" value="0.10">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="raw-max">Raw max</label><span class="control-value"><output id="raw-max-out">5.00 m</output><input id="raw-max-num" type="number" min="0.2" max="10" step="0.05" value="5.00"></span></div>
+      <input id="raw-max" type="range" min="0.2" max="10" step="0.05" value="5.00">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="pred-min">Pred min</label><span class="control-value"><output id="pred-min-out">0.10 m</output><input id="pred-min-num" type="number" min="0" max="3" step="0.01" value="0.10"></span></div>
+      <input id="pred-min" type="range" min="0" max="3" step="0.01" value="0.10">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="pred-max">Pred max</label><span class="control-value"><output id="pred-max-out">5.00 m</output><input id="pred-max-num" type="number" min="0.2" max="10" step="0.05" value="5.00"></span></div>
+      <input id="pred-max" type="range" min="0.2" max="10" step="0.05" value="5.00">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="pct-min">Pred percentile min</label><span class="control-value"><output id="pct-min-out">1%</output><input id="pct-min-num" type="number" min="0" max="20" step="0.5" value="1"></span></div>
+      <input id="pct-min" type="range" min="0" max="20" step="0.5" value="1">
+    </div>
+    <div class="control">
+      <div class="control-row"><label for="pct-max">Pred percentile max</label><span class="control-value"><output id="pct-max-out">99%</output><input id="pct-max-num" type="number" min="80" max="100" step="0.5" value="99"></span></div>
+      <input id="pct-max" type="range" min="80" max="100" step="0.5" value="99">
+    </div>
+  </div>
+  </div>
+</aside>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('gl');
+  const labelsEl = $('labels');
+  const gl = canvas.getContext('webgl2', {
+    antialias: false,
+    alpha: false,
+    preserveDrawingBuffer: true,
+  });
+  const urlParams = new URLSearchParams(location.search);
+  const demoMode = urlParams.get('demo') === '1' || urlParams.get('mode') === 'demo';
+  const els = {
+    topbar: document.querySelector('.topbar'),
+    panel: $('control-panel'), panelHeader: $('panel-header'),
+    panelMinBtn: $('btn-panel-min'), panelFab: $('panel-fab'),
+    connPill: $('conn-pill'), connText: $('conn-text'), res: $('res-text'),
+    connect: $('btn-connect'), record: $('btn-record'),
+    quit: $('btn-quit'), reset: $('btn-reset'), resetSliders: $('btn-reset-sliders'),
+    fullscreen: $('btn-fullscreen'), inferenceEnabled: $('inference-enabled'),
+    showRgb: $('show-rgb'), showRaw: $('show-raw'), showPred: $('show-pred'),
+    showRawCloud: $('show-raw-cloud'), showPredCloud: $('show-pred-cloud'),
+    predAuto: $('pred-auto'), rawMin: $('raw-min'), rawMax: $('raw-max'),
+    measureEnabled: $('measure-enabled'),
+    measureReadout: $('measure-readout'), measureStatus: $('measure-status'),
+    measureClear: $('btn-measure-clear'),
+    predMin: $('pred-min'), predMax: $('pred-max'), pctMin: $('pct-min'),
+    pctMax: $('pct-max'), pointSize: $('point-size'), pointStride: $('point-stride'),
+    pointBudget: $('point-budget'), cloudMax: $('cloud-max'), cloudYaw: $('cloud-yaw'),
+    cloudPitch: $('cloud-pitch'), autoRotate: $('auto-rotate'),
+    rotateSpeed: $('rotate-speed'), streamFps: $('stream-fps'),
+    orbitBtn: $('btn-orbit'), orbitMode: $('orbit-mode'),
+    orbitAmpX: $('orbit-amp-x'), orbitAmpY: $('orbit-amp-y'),
+    orbitPeriod: $('orbit-period'), orbitLoops: $('orbit-loops'),
+    orbitForever: $('orbit-forever'),
+    orbitAmpXOut: $('orbit-amp-x-out'), orbitAmpYOut: $('orbit-amp-y-out'),
+    orbitPeriodOut: $('orbit-period-out'), orbitLoopsOut: $('orbit-loops-out'),
+    outlierEnabled: $('cloud-outlier'), outlierRadius: $('outlier-radius'),
+    outlierDepthTol: $('outlier-depth-tol'), outlierMinPts: $('outlier-min-pts'),
+    outlierRadiusOut: $('outlier-radius-out'), outlierDepthTolOut: $('outlier-depth-tol-out'),
+    outlierMinPtsOut: $('outlier-min-pts-out'),
+    rawMinOut: $('raw-min-out'), rawMaxOut: $('raw-max-out'),
+    predMinOut: $('pred-min-out'), predMaxOut: $('pred-max-out'),
+    pctMinOut: $('pct-min-out'), pctMaxOut: $('pct-max-out'),
+    pointSizeOut: $('point-size-out'), pointStrideOut: $('point-stride-out'),
+    pointBudgetOut: $('point-budget-out'), cloudMaxOut: $('cloud-max-out'),
+    cloudYawOut: $('cloud-yaw-out'), cloudPitchOut: $('cloud-pitch-out'),
+    rotateSpeedOut: $('rotate-speed-out'),
+    streamFpsOut: $('stream-fps-out'), payloadRate: $('payload-rate'),
+    notice: $('notice'), noticeText: $('notice-text'),
+    useEffectiveStride: $('btn-use-effective-stride'), error: $('error'),
+    serverFps: $('server-fps'), runnerFps: $('runner-fps'),
+    displayFps: $('display-fps'), renderFps: $('render-fps'),
+    hudServerFps: $('hud-server-fps'), hudRunnerFps: $('hud-runner-fps'),
+    hudDisplayFps: $('hud-display-fps'),
+    upscaleMs: $('upscale-ms'),
+    frame: $('frame'), bytes: $('bytes'),
+    rawPoints: $('raw-points'), predPoints: $('pred-points'), session: $('session'),
+  };
+  if (!gl) {
+    els.error.textContent = 'WebGL2 unavailable';
+    return;
+  }
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  const REALTIME_LEGACY_PROTOCOL = 'lingbot.realtime.webgl.v1';
+  const REALTIME_PROTOCOL = 'lingbot.realtime.webgl.v2';
+  const REALTIME_FLOW_CONTROL = 'frame_ack';
+
+  const state = {
+    ws: null, expectPayload: false, pendingHeader: null, connected: false,
+    frameAckEnabled: false,
+    ready: null, colorSize: [0, 0], rawSize: [0, 0], predSize: [0, 0],
+    predDisplaySize: [0, 0],
+    rawCloudSize: [0, 0], rawCloudStride: 2, predCloudSize: [0, 0],
+    intr: null, frameId: 0, payloadBytes: 0, predAutoRange: [0.1, 5.0],
+    predAutoLastAt: 0,
+    texturesReady: false, lastStatus: { camera_status: 'idle' },
+    view: { yaw: 4 * Math.PI / 180, pitch: 5 * Math.PI / 180, distance: 2.8, panX: 0, panY: 0 },
+    orbit: { active: false, phase: 0, baseYawDeg: 0, basePitchDeg: 0, lastSyncAt: 0 },
+    lastDrawAt: 0,
+    displayFps: { samples: [], latest: 0, lastFrameAt: 0, lastUpdateAt: 0 },
+    renderFps: { sampleAt: 0, frames: 0, latest: 0 },
+    pendingFrame: null,
+    streamKey: '',
+    inferenceEnabled: null,
+    inferenceRevision: 0,
+    inferenceTogglePending: false,
+    inferenceViewPrefs: null,
+    textureAvailable: {
+      rgb: false, raw: false, pred: false, predDisplay: false,
+      rawCloud: false, predCloud: false,
+    },
+    textureSize: {
+      rgb: [0, 0], raw: [0, 0], pred: [0, 0], predUpscaled: [0, 0],
+      rawCloud: [0, 0], predCloud: [0, 0],
+    },
+    depthData: { raw: null, pred: null },
+    upscale: {
+      available: true,
+      bypass: false,
+      warning: '',
+      timerExt: gl.getExtension('EXT_disjoint_timer_query_webgl2'),
+      pendingQueries: [],
+      displayText: '--',
+      lastDisplayAt: 0,
+    },
+    measure: {
+      panels: [],
+      lines: [],
+      nextLineId: 1,
+      draftStart: null,
+      draftHover: null,
+      pointerClient: null,
+      labelDrag: null,
+      status: 'off',
+      lastHoverSampleAt: 0,
+    },
+    ui: {
+      outputsDirty: true,
+      labelsDirty: true,
+      labelsHtml: '',
+      staticLabelsHtml: '',
+      lastStatsAt: 0,
+      lastViewSliderSyncAt: 0,
+      topSafeCssPx: 0,
+      twoDLayoutKey: null,
+    },
+    stats: {
+      e2eFps: 0,
+      e2eWindowFps: 0,
+      serverFpsText: '--',
+      runnerFpsText: '--',
+      frameText: '--',
+      bytesText: '--',
+      rawPointsText: '--',
+      predPointsText: '--',
+      recordOn: false,
+      recordText: 'Record',
+    },
+  };
+  const DEG = Math.PI / 180;
+  const RAD = 180 / Math.PI;
+  const sliderControls = new Map();
+  const streamControlIds = new Set(['show-rgb', 'show-raw', 'show-pred', 'show-raw-cloud', 'show-pred-cloud', 'measure-enabled']);
+  document.querySelectorAll('input[type="range"]').forEach((range) => {
+    const number = $(`${range.id}-num`);
+    if (!number) return;
+    sliderControls.set(range.id, {
+      range,
+      number,
+      min: Number(range.min),
+      max: Number(range.max),
+      step: range.step === 'any' ? 0 : Number(range.step || 1),
+      defaultValue: range.value,
+    });
+  });
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      throw new Error(gl.getShaderInfoLog(s));
+    }
+    return s;
+  }
+  function program(vs, fs) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error(gl.getProgramInfoLog(p));
+    }
+    return p;
+  }
+
+  const quadVs = `#version 300 es
+    in vec2 aPos;
+    out vec2 vUv;
+    void main() {
+      vUv = aPos * 0.5 + 0.5;
+      gl_Position = vec4(aPos, 0.0, 1.0);
+    }
+  `;
+  const imageFs = `#version 300 es
+    precision highp float;
+    precision highp usampler2D;
+    in vec2 vUv;
+    out vec4 outColor;
+    uniform sampler2D uRgb;
+    uniform usampler2D uDepth;
+    uniform sampler2D uLut;
+    uniform int uMode;
+    uniform float uVmin;
+    uniform float uVmax;
+    vec3 depthColor(uint mm) {
+      if (mm == 0u) return vec3(0.0);
+      float meters = float(mm) * 0.001;
+      float t = clamp((meters - uVmin) / max(uVmax - uVmin, 0.000001), 0.0, 1.0);
+      return texture(uLut, vec2(t, 0.5)).rgb;
+    }
+    void main() {
+      vec2 uv = vec2(vUv.x, 1.0 - vUv.y);
+      if (uMode == 0) {
+        outColor = vec4(texture(uRgb, uv).bgr, 1.0);
+        return;
+      }
+      ivec2 size = textureSize(uDepth, 0);
+      ivec2 p = ivec2(clamp(floor(uv * vec2(size)), vec2(0.0), vec2(size - 1)));
+      outColor = vec4(depthColor(texelFetch(uDepth, p, 0).r), 1.0);
+    }
+  `;
+  const upscaleFs = `#version 300 es
+    precision highp float;
+    precision highp int;
+    precision highp usampler2D;
+    in vec2 vUv;
+    layout(location = 0) out uvec4 outDepth;
+    uniform usampler2D uSourceDepth;
+    uniform sampler2D uRgb;
+    uniform ivec2 uSourceSize;
+    uniform ivec2 uTargetSize;
+    uniform float uMaxDepthMm;
+
+    bool validDepth(uint mm) {
+      return mm > 0u && float(mm) <= uMaxDepthMm;
+    }
+
+    void main() {
+      vec2 targetUv = gl_FragCoord.xy / vec2(uTargetSize);
+      vec2 sourcePos = targetUv * vec2(uSourceSize) - vec2(0.5);
+      ivec2 center = ivec2(clamp(
+        floor(sourcePos + vec2(0.5)),
+        vec2(0.0),
+        vec2(uSourceSize - 1)
+      ));
+
+      uint referenceMm = texelFetch(uSourceDepth, center, 0).r;
+      float nearestD2 = 1e20;
+      if (!validDepth(referenceMm)) {
+        referenceMm = 0u;
+        for (int oy = -2; oy <= 2; ++oy) {
+          for (int ox = -2; ox <= 2; ++ox) {
+            ivec2 p = center + ivec2(ox, oy);
+            if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, uSourceSize))) {
+              continue;
+            }
+            uint mm = texelFetch(uSourceDepth, p, 0).r;
+            vec2 delta = vec2(p) - sourcePos;
+            float d2 = dot(delta, delta);
+            if (validDepth(mm) && d2 < nearestD2) {
+              nearestD2 = d2;
+              referenceMm = mm;
+            }
+          }
+        }
+      }
+      if (referenceMm == 0u) {
+        outDepth = uvec4(0u);
+        return;
+      }
+
+      vec3 referenceRgb = texture(uRgb, targetUv).bgr;
+      float referenceM = float(referenceMm) * 0.001;
+      float sigmaSpatial = 1.25;
+      float sigmaColor = 0.10;
+      float sigmaDepth = max(0.05, 0.03 * referenceM);
+      float weightedDepth = 0.0;
+      float weightSum = 0.0;
+      for (int oy = -2; oy <= 2; ++oy) {
+        for (int ox = -2; ox <= 2; ++ox) {
+          ivec2 p = center + ivec2(ox, oy);
+          if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, uSourceSize))) {
+            continue;
+          }
+          uint mm = texelFetch(uSourceDepth, p, 0).r;
+          if (!validDepth(mm)) continue;
+
+          vec2 delta = vec2(p) - sourcePos;
+          float spatialTerm = dot(delta, delta) / (sigmaSpatial * sigmaSpatial);
+          vec2 sampleUv = (vec2(p) + vec2(0.5)) / vec2(uSourceSize);
+          vec3 rgbDelta = texture(uRgb, sampleUv).bgr - referenceRgb;
+          float colorTerm = dot(rgbDelta, rgbDelta) / (sigmaColor * sigmaColor);
+          float depthDelta = float(mm) * 0.001 - referenceM;
+          float depthTerm = depthDelta * depthDelta / (sigmaDepth * sigmaDepth);
+          float weight = exp(-0.5 * (spatialTerm + colorTerm + depthTerm));
+          weightedDepth += weight * float(mm);
+          weightSum += weight;
+        }
+      }
+
+      uint resultMm = weightSum > 0.000001
+        ? uint(clamp(round(weightedDepth / weightSum), 0.0, 65535.0))
+        : referenceMm;
+      outDepth = uvec4(resultMm, 0u, 0u, 1u);
+    }
+  `;
+  const cloudVs = `#version 300 es
+    precision highp float;
+    precision highp usampler2D;
+    uniform usampler2D uDepth;
+    uniform sampler2D uRgb;
+    uniform mat4 uMvp;
+    uniform vec2 uDepthSize;
+    uniform vec2 uRgbSize;
+    uniform float uFx;
+    uniform float uFy;
+    uniform float uPpx;
+    uniform float uPpy;
+    uniform float uMaxDepth;
+    uniform float uPointSize;
+    uniform int uStride;
+    uniform vec4 uTint;
+    uniform int uOutlierEnabled;
+    uniform int uOutlierRadius;
+    uniform float uOutlierDepthTol;
+    uniform int uOutlierMinPts;
+    out vec4 vColor;
+    void main() {
+      int cols = (int(uDepthSize.x) + uStride - 1) / uStride;
+      int ix = (gl_VertexID % cols) * uStride;
+      int iy = (gl_VertexID / cols) * uStride;
+      uint mm = texelFetch(uDepth, ivec2(ix, iy), 0).r;
+      float z = float(mm) * 0.001;
+      if (mm == 0u || z <= 0.0 || z > uMaxDepth) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        gl_PointSize = 0.0;
+        vColor = vec4(0.0);
+        return;
+      }
+      // Radius Outlier Removal (ROR), image-space：在网格邻域里数「深度接近的有效邻居」，
+      // 支持不足即剔除，去孤立飞点 / 深度跳变处的 flying pixels。实时等效，非 3D KDTree。
+      if (uOutlierEnabled == 1) {
+        const int OUTLIER_MAX_R = 3;
+        int dw = int(uDepthSize.x);
+        int dh = int(uDepthSize.y);
+        int support = 0;
+        for (int dy = -OUTLIER_MAX_R; dy <= OUTLIER_MAX_R; dy++) {
+          for (int dx = -OUTLIER_MAX_R; dx <= OUTLIER_MAX_R; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            if (abs(dx) > uOutlierRadius || abs(dy) > uOutlierRadius) continue;
+            int nx = ix + dx * uStride;
+            int ny = iy + dy * uStride;
+            if (nx < 0 || ny < 0 || nx >= dw || ny >= dh) continue;
+            uint nmm = texelFetch(uDepth, ivec2(nx, ny), 0).r;
+            if (nmm == 0u) continue;
+            float nz = float(nmm) * 0.001;
+            if (nz <= 0.0 || nz > uMaxDepth) continue;
+            if (abs(nz - z) <= uOutlierDepthTol) support++;
+          }
+        }
+        if (support < uOutlierMinPts) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          gl_PointSize = 0.0;
+          vColor = vec4(0.0);
+          return;
+        }
+      }
+      float x = (float(ix) - uPpx) / uFx * z;
+      float y = -(float(iy) - uPpy) / uFy * z;
+      vec2 rgbUv = (vec2(float(ix), float(iy)) + vec2(0.5)) / uDepthSize;
+      ivec2 rgbP = ivec2(clamp(floor(rgbUv * uRgbSize), vec2(0.0), uRgbSize - vec2(1.0)));
+      vec3 rgb = texelFetch(uRgb, rgbP, 0).bgr;
+      vColor = vec4(rgb * uTint.rgb, uTint.a);
+      gl_Position = uMvp * vec4(x, y, -z, 1.0);
+      gl_PointSize = uPointSize;
+    }
+  `;
+  const cloudFs = `#version 300 es
+    precision mediump float;
+    in vec4 vColor;
+    out vec4 outColor;
+    void main() {
+      vec2 p = gl_PointCoord - vec2(0.5);
+      if (dot(p, p) > 0.25) discard;
+      outColor = vColor;
+    }
+  `;
+
+  const imageProgram = program(quadVs, imageFs);
+  const cloudProgram = program(cloudVs, cloudFs);
+  let upscaleProgram = null;
+  try {
+    upscaleProgram = program(quadVs, upscaleFs);
+  } catch (exc) {
+    state.upscale.available = false;
+    state.upscale.warning = `Prediction upscale unavailable; using nearest mapping: ${exc.message || exc}`;
+  }
+  const imageLoc = {
+    program: imageProgram,
+    pos: gl.getAttribLocation(imageProgram, 'aPos'),
+    rgb: gl.getUniformLocation(imageProgram, 'uRgb'),
+    depth: gl.getUniformLocation(imageProgram, 'uDepth'),
+    lut: gl.getUniformLocation(imageProgram, 'uLut'),
+    mode: gl.getUniformLocation(imageProgram, 'uMode'),
+    vmin: gl.getUniformLocation(imageProgram, 'uVmin'),
+    vmax: gl.getUniformLocation(imageProgram, 'uVmax'),
+  };
+  const cloudLoc = {
+    program: cloudProgram,
+    depth: gl.getUniformLocation(cloudProgram, 'uDepth'),
+    rgb: gl.getUniformLocation(cloudProgram, 'uRgb'),
+    depthSize: gl.getUniformLocation(cloudProgram, 'uDepthSize'),
+    rgbSize: gl.getUniformLocation(cloudProgram, 'uRgbSize'),
+    fx: gl.getUniformLocation(cloudProgram, 'uFx'),
+    fy: gl.getUniformLocation(cloudProgram, 'uFy'),
+    ppx: gl.getUniformLocation(cloudProgram, 'uPpx'),
+    ppy: gl.getUniformLocation(cloudProgram, 'uPpy'),
+    maxDepth: gl.getUniformLocation(cloudProgram, 'uMaxDepth'),
+    pointSize: gl.getUniformLocation(cloudProgram, 'uPointSize'),
+    stride: gl.getUniformLocation(cloudProgram, 'uStride'),
+    tint: gl.getUniformLocation(cloudProgram, 'uTint'),
+    outlierEnabled: gl.getUniformLocation(cloudProgram, 'uOutlierEnabled'),
+    outlierRadius: gl.getUniformLocation(cloudProgram, 'uOutlierRadius'),
+    outlierDepthTol: gl.getUniformLocation(cloudProgram, 'uOutlierDepthTol'),
+    outlierMinPts: gl.getUniformLocation(cloudProgram, 'uOutlierMinPts'),
+    mvp: gl.getUniformLocation(cloudProgram, 'uMvp'),
+  };
+  const upscaleLoc = upscaleProgram ? {
+    program: upscaleProgram,
+    pos: gl.getAttribLocation(upscaleProgram, 'aPos'),
+    sourceDepth: gl.getUniformLocation(upscaleProgram, 'uSourceDepth'),
+    rgb: gl.getUniformLocation(upscaleProgram, 'uRgb'),
+    sourceSize: gl.getUniformLocation(upscaleProgram, 'uSourceSize'),
+    targetSize: gl.getUniformLocation(upscaleProgram, 'uTargetSize'),
+    maxDepthMm: gl.getUniformLocation(upscaleProgram, 'uMaxDepthMm'),
+  } : null;
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const tex = {
+    rgb: gl.createTexture(), raw: gl.createTexture(), pred: gl.createTexture(),
+    predUpscaled: gl.createTexture(),
+    rawCloud: gl.createTexture(), predCloud: gl.createTexture(), lut: gl.createTexture(),
+    depthDummy: gl.createTexture(),
+  };
+  const upscaleFramebuffer = gl.createFramebuffer();
+  const predReadFramebuffer = gl.createFramebuffer();
+
+  function bindTexture(unit, target, texture) {
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(target, texture);
+  }
+  function setup2DTexture(target, texture) {
+    gl.bindTexture(target, texture);
+    gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+  setup2DTexture(gl.TEXTURE_2D, tex.rgb);
+  setup2DTexture(gl.TEXTURE_2D, tex.raw);
+  setup2DTexture(gl.TEXTURE_2D, tex.pred);
+  setup2DTexture(gl.TEXTURE_2D, tex.predUpscaled);
+  setup2DTexture(gl.TEXTURE_2D, tex.rawCloud);
+  setup2DTexture(gl.TEXTURE_2D, tex.predCloud);
+  setup2DTexture(gl.TEXTURE_2D, tex.lut);
+  // 始终完整的 1x1 整型占位深度纹理。2D 图像着色器的 uDepth 是 usampler2D（单元 1），
+  // 而点云绘制会把非整型的 tex.rgb 绑到单元 1；绘制 RGB 面板(mode 0，不采样 uDepth)时
+  // 若单元 1 残留非整型纹理，会触发 sampler 类型不匹配、整次 draw 被丢弃 → RGB 黑屏。
+  // 给单元 1 挂一个完整 R16UI 占位即可让 RGB 面板 draw 始终合法。
+  setup2DTexture(gl.TEXTURE_2D, tex.depthDummy);
+  gl.texImage2D(
+    gl.TEXTURE_2D, 0, gl.R16UI, 1, 1, 0,
+    gl.RED_INTEGER, gl.UNSIGNED_SHORT, new Uint16Array([0]),
+  );
+
+  function uploadLut(list) {
+    const data = new Uint8Array(list);
+    bindTexture(3, gl.TEXTURE_2D, tex.lut);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 256, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
+  }
+  function sameSize(a, b) {
+    return a[0] === b[0] && a[1] === b[1];
+  }
+  function noteSize(nextSize, currentSize) {
+    if (!sameSize(currentSize, nextSize)) state.ui.labelsDirty = true;
+    return [nextSize[0], nextSize[1]];
+  }
+  function uploadTexture(unit, texture, key, size, internalFormat, format, type, data) {
+    bindTexture(unit, gl.TEXTURE_2D, texture);
+    if (!sameSize(state.textureSize[key], size)) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, size[0], size[1], 0, format, type, data);
+      state.textureSize[key] = [size[0], size[1]];
+      return;
+    }
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, size[0], size[1], format, type, data);
+  }
+  function bindFullscreenQuad(loc) {
+    gl.useProgram(loc.program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.enableVertexAttribArray(loc.pos);
+    gl.vertexAttribPointer(loc.pos, 2, gl.FLOAT, false, 0, 0);
+  }
+  function predDisplayTexture() {
+    return state.upscale.bypass ? tex.pred : tex.predUpscaled;
+  }
+  function setUpscaleText(text, force = false) {
+    const now = performance.now();
+    if (!force && text !== state.upscale.displayText && now - state.upscale.lastDisplayAt < 200) {
+      state.upscale.displayText = text;
+      return;
+    }
+    if (force || text !== state.upscale.displayText || now - state.upscale.lastDisplayAt >= 200) {
+      state.upscale.displayText = text;
+      state.upscale.lastDisplayAt = now;
+      els.upscaleMs.textContent = text;
+    }
+  }
+  function setPredDisplayFallback(message = '', disableUpscale = false) {
+    state.upscale.bypass = true;
+    state.predDisplaySize = noteSize(state.predSize, state.predDisplaySize);
+    state.textureAvailable.predDisplay = state.textureAvailable.pred;
+    if (message) {
+      state.upscale.warning = message;
+    }
+    if (disableUpscale) state.upscale.available = false;
+    setUpscaleText(state.textureAvailable.predDisplay ? 'nearest' : '--', true);
+  }
+  function beginUpscaleTimer() {
+    const ext = state.upscale.timerExt;
+    if (!ext || state.upscale.pendingQueries.length >= 4) return null;
+    const query = gl.createQuery();
+    gl.beginQuery(ext.TIME_ELAPSED_EXT, query);
+    return query;
+  }
+  function endUpscaleTimer(query) {
+    if (!query || !state.upscale.timerExt) return;
+    gl.endQuery(state.upscale.timerExt.TIME_ELAPSED_EXT);
+    state.upscale.pendingQueries.push(query);
+  }
+  function pollUpscaleTimers() {
+    const ext = state.upscale.timerExt;
+    if (!ext) {
+      if (!state.upscale.bypass) setUpscaleText('n/a');
+      return;
+    }
+    while (state.upscale.pendingQueries.length) {
+      const query = state.upscale.pendingQueries[0];
+      if (!gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) return;
+      state.upscale.pendingQueries.shift();
+      const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+      const elapsedNs = gl.getQueryParameter(query, gl.QUERY_RESULT);
+      gl.deleteQuery(query);
+      if (!disjoint && !state.upscale.bypass) {
+        setUpscaleText((Number(elapsedNs) / 1e6).toFixed(2));
+      }
+    }
+  }
+  function updatePredDisplayTexture() {
+    if (!state.textureAvailable.pred) {
+      state.textureAvailable.predDisplay = false;
+      state.predDisplaySize = noteSize([0, 0], state.predDisplaySize);
+      return;
+    }
+    if (!state.textureAvailable.rgb || !state.colorSize[0] || !state.colorSize[1]) {
+      setPredDisplayFallback('Prediction RGB guide unavailable; using nearest mapping.');
+      return;
+    }
+    if (sameSize(state.predSize, state.colorSize)) {
+      state.upscale.bypass = true;
+      if (state.upscale.available) state.upscale.warning = '';
+      state.predDisplaySize = noteSize(state.predSize, state.predDisplaySize);
+      state.textureAvailable.predDisplay = true;
+      setUpscaleText('skip', true);
+      return;
+    }
+    if (!state.upscale.available || !upscaleLoc) {
+      setPredDisplayFallback(
+        state.upscale.warning || 'Prediction upscale unavailable; using nearest mapping.'
+      );
+      return;
+    }
+
+    const targetSize = state.colorSize;
+    bindTexture(6, gl.TEXTURE_2D, tex.predUpscaled);
+    if (!sameSize(state.textureSize.predUpscaled, targetSize)) {
+      gl.texImage2D(
+        gl.TEXTURE_2D, 0, gl.R16UI,
+        targetSize[0], targetSize[1], 0,
+        gl.RED_INTEGER, gl.UNSIGNED_SHORT, null,
+      );
+      state.textureSize.predUpscaled = [...targetSize];
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, upscaleFramebuffer);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex.predUpscaled, 0,
+    );
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      setPredDisplayFallback(
+        'R16UI prediction framebuffer is unsupported; using nearest mapping.',
+        true,
+      );
+      return;
+    }
+
+    gl.viewport(0, 0, targetSize[0], targetSize[1]);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+    gl.depthMask(false);
+    bindFullscreenQuad(upscaleLoc);
+    bindTexture(0, gl.TEXTURE_2D, tex.rgb);
+    bindTexture(2, gl.TEXTURE_2D, tex.pred);
+    gl.uniform1i(upscaleLoc.sourceDepth, 2);
+    gl.uniform1i(upscaleLoc.rgb, 0);
+    gl.uniform2i(upscaleLoc.sourceSize, state.predSize[0], state.predSize[1]);
+    gl.uniform2i(upscaleLoc.targetSize, targetSize[0], targetSize[1]);
+    gl.uniform1f(upscaleLoc.maxDepthMm, measureMaxDepth() * 1000);
+    const timerQuery = beginUpscaleTimer();
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    endUpscaleTimer(timerQuery);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    state.upscale.bypass = false;
+    state.upscale.warning = '';
+    state.predDisplaySize = noteSize(targetSize, state.predDisplaySize);
+    state.textureAvailable.predDisplay = true;
+  }
+  function measureEnabled() {
+    return state.inferenceEnabled !== false && Boolean(els.measureEnabled.checked);
+  }
+  function setPredControlsDisabled(disabled) {
+    [
+      els.showPred, els.showPredCloud, els.predAuto, els.measureEnabled,
+      els.predMin, els.predMax, els.pctMin, els.pctMax,
+      $('pred-min-num'), $('pred-max-num'), $('pct-min-num'), $('pct-max-num'),
+    ].forEach((control) => {
+      if (control) control.disabled = disabled;
+    });
+  }
+  function clearPredFrameState() {
+    state.textureAvailable.pred = false;
+    state.textureAvailable.predDisplay = false;
+    state.textureAvailable.predCloud = false;
+    state.depthData.pred = null;
+    state.predSize = [0, 0];
+    state.predDisplaySize = [0, 0];
+    state.predCloudSize = [0, 0];
+    state.ui.labelsDirty = true;
+    state.upscale.bypass = false;
+    setUpscaleText('--', true);
+    refreshTextureReady();
+  }
+  function applyInferenceState(enabled, options = {}) {
+    const next = Boolean(enabled);
+    const previous = state.inferenceEnabled;
+    const changed = previous !== next;
+    const revision = Number(options.revision);
+    if (Number.isFinite(revision)) {
+      state.inferenceRevision = Math.max(state.inferenceRevision, revision);
+    }
+    if (changed && !next) {
+      state.inferenceViewPrefs = {
+        showPred: els.showPred.checked,
+        showPredCloud: els.showPredCloud.checked,
+        predAuto: els.predAuto.checked,
+      };
+      els.showPred.checked = false;
+      els.showPredCloud.checked = false;
+      els.predAuto.checked = false;
+      els.measureEnabled.checked = false;
+      clearMeasure();
+      clearPredFrameState();
+    } else if (changed && next && state.inferenceViewPrefs) {
+      els.showPred.checked = state.inferenceViewPrefs.showPred;
+      els.showPredCloud.checked = state.inferenceViewPrefs.showPredCloud;
+      els.predAuto.checked = state.inferenceViewPrefs.predAuto;
+    }
+    state.inferenceEnabled = next;
+    els.inferenceEnabled.checked = next;
+    setPredControlsDisabled(!next);
+    state.stats.runnerFpsText = next ? '--' : 'off';
+    markOutputsDirty();
+    if (changed && options.updateStream !== false) {
+      handleStreamSelectionChange();
+    }
+  }
+  function streamSelection() {
+    const useMeasure = measureEnabled();
+    const useInference = state.inferenceEnabled !== false;
+    const needPred = useInference && (
+      els.showPred.checked || els.showPredCloud.checked || useMeasure
+    );
+    const needColor = (
+      els.showRgb.checked
+      || els.showRawCloud.checked
+      || needPred
+    );
+    return {
+      color: needColor,
+      raw: els.showRaw.checked,
+      pred: needPred,
+      rawCloud: els.showRawCloud.checked,
+      predCloud: false,
+    };
+  }
+  function hasAnyStream(selection = streamSelection()) {
+    return selection.color || selection.raw || selection.pred || selection.rawCloud || selection.predCloud;
+  }
+  function streamKey(selection = streamSelection()) {
+    const streams = `${selection.color ? 1 : 0}${selection.raw ? 1 : 0}${selection.pred ? 1 : 0}${selection.rawCloud ? 1 : 0}${selection.predCloud ? 1 : 0}`;
+    return `${streams}:${els.streamFps.value}:${els.pointStride.value}:${els.pointBudget.value}`;
+  }
+  function refreshTextureReady() {
+    const nextReady = (
+      state.textureAvailable.rgb || state.textureAvailable.raw || state.textureAvailable.predDisplay
+      || state.textureAvailable.rawCloud || state.textureAvailable.predCloud
+    );
+    if (nextReady !== state.texturesReady) state.ui.labelsDirty = true;
+    state.texturesReady = nextReady;
+  }
+  function markRequestedTexturesPending(selection) {
+    if (!selection.color) state.textureAvailable.rgb = false;
+    if (!selection.raw) {
+      state.textureAvailable.raw = false;
+      state.depthData.raw = null;
+    }
+    if (!selection.pred) {
+      state.textureAvailable.pred = false;
+      state.textureAvailable.predDisplay = false;
+      state.depthData.pred = null;
+    }
+    if (!selection.rawCloud) state.textureAvailable.rawCloud = false;
+    if (!selection.predCloud) state.textureAvailable.predCloud = false;
+    refreshTextureReady();
+  }
+  function queueFrame(header, buffer) {
+    state.pendingFrame = { header, buffer };
+  }
+  function consumePendingFrame() {
+    if (!state.pendingFrame) return false;
+    const frame = state.pendingFrame;
+    state.pendingFrame = null;
+    return uploadFrame(frame.header, frame.buffer);
+  }
+  function uploadFrame(header, buffer) {
+    const frameRevision = Number(header.inference_revision || 0);
+    if (frameRevision < state.inferenceRevision) return false;
+    if (
+      frameRevision > state.inferenceRevision
+      || Boolean(header.inference_enabled) !== state.inferenceEnabled
+    ) {
+      applyInferenceState(Boolean(header.inference_enabled), {
+        revision: frameRevision,
+      });
+    }
+    const color = header.color, raw = header.raw_depth, pred = header.pred_depth;
+    const rawCloud = header.raw_cloud_depth, predCloud = header.pred_cloud_depth;
+    state.intr = header.intrinsics || state.intr;
+    state.frameId = header.frame_id;
+    state.payloadBytes = header.payload_bytes ?? buffer.byteLength;
+
+    let predData = null;
+    if (color) {
+      const colorData = new Uint8Array(buffer, color.offset, color.bytes);
+      state.colorSize = noteSize([color.shape[1], color.shape[0]], state.colorSize);
+      uploadTexture(0, tex.rgb, "rgb", state.colorSize, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, colorData);
+      state.textureAvailable.rgb = true;
+    }
+    if (raw) {
+      const rawData = new Uint16Array(buffer, raw.offset, raw.bytes / 2);
+      state.rawSize = noteSize([raw.shape[1], raw.shape[0]], state.rawSize);
+      state.depthData.raw = rawData;
+      uploadTexture(1, tex.raw, "raw", state.rawSize, gl.R16UI, gl.RED_INTEGER, gl.UNSIGNED_SHORT, rawData);
+      state.textureAvailable.raw = true;
+    }
+    if (pred) {
+      predData = new Uint16Array(buffer, pred.offset, pred.bytes / 2);
+      state.predSize = noteSize([pred.shape[1], pred.shape[0]], state.predSize);
+      state.depthData.pred = predData;
+      uploadTexture(2, tex.pred, "pred", state.predSize, gl.R16UI, gl.RED_INTEGER, gl.UNSIGNED_SHORT, predData);
+      state.textureAvailable.pred = true;
+    }
+    if (rawCloud) {
+      const rawCloudData = new Uint16Array(buffer, rawCloud.offset, rawCloud.bytes / 2);
+      state.rawCloudSize = noteSize([rawCloud.shape[1], rawCloud.shape[0]], state.rawCloudSize);
+      state.rawCloudStride = Math.max(1, Number(rawCloud.stride || 1));
+      uploadTexture(4, tex.rawCloud, "rawCloud", state.rawCloudSize, gl.R16UI, gl.RED_INTEGER, gl.UNSIGNED_SHORT, rawCloudData);
+      state.textureAvailable.rawCloud = true;
+    }
+    if (predCloud) {
+      const predCloudData = new Uint16Array(buffer, predCloud.offset, predCloud.bytes / 2);
+      state.predCloudSize = [predCloud.shape[1], predCloud.shape[0]];
+      uploadTexture(5, tex.predCloud, "predCloud", state.predCloudSize, gl.R16UI, gl.RED_INTEGER, gl.UNSIGNED_SHORT, predCloudData);
+      state.textureAvailable.predCloud = true;
+    }
+    if (pred) {
+      updatePredDisplayTexture();
+    }
+    refreshTextureReady();
+
+    if (predData && els.predAuto.checked) {
+      updatePredAutoRange(predData);
+    }
+    const colorText = state.textureAvailable.rgb ? `${state.colorSize[0]}x${state.colorSize[1]}` : '--';
+    const rawText = state.textureAvailable.raw ? `${state.rawSize[0]}x${state.rawSize[1]}` : '--';
+    const predText = state.textureAvailable.predDisplay
+      ? `${state.predSize[0]}x${state.predSize[1]}->${state.predDisplaySize[0]}x${state.predDisplaySize[1]}`
+      : '--';
+    const rawCloudText = state.textureAvailable.rawCloud ? `${state.rawCloudSize[0]}x${state.rawCloudSize[1]}` : '--';
+    const predCloudText = state.textureAvailable.predDisplay
+      ? `${state.predDisplaySize[0]}x${state.predDisplaySize[1]}`
+      : '--';
+    els.res.textContent = `rgb ${colorText} / raw ${rawText} / pred ${predText} / cloud ${rawCloudText}|${predCloudText}`;
+    const e2eWindowFps = Number(header.e2e_window_fps || header.e2e_avg_fps || header.e2e_fps || 0);
+    state.stats.e2eWindowFps = e2eWindowFps;
+    state.stats.e2eFps = e2eWindowFps;
+    state.stats.serverFpsText = e2eWindowFps > 0 ? e2eWindowFps.toFixed(1) : '--';
+    state.stats.runnerFpsText = header.inference_enabled === false
+      ? 'off'
+      : Number(header.inference_window_fps || header.inference_avg_fps || 0).toFixed(1);
+    state.stats.frameText = String(header.frame || 0);
+    state.stats.bytesText = fmtBytes(state.payloadBytes);
+    state.stats.recordOn = Boolean(header.record_on);
+    state.stats.recordText = header.record_on ? 'Pause rec' : 'Record';
+    markOutputsDirty();
+    return true;
+  }
+
+  function histogramPercentileRange(data, pmin, pmax, fallbackMin, fallbackMax) {
+    const bins = 512;
+    const hist = new Uint32Array(bins);
+    const step = Math.max(1, Math.floor(data.length / 25000));
+    let count = 0;
+    for (let i = 0; i < data.length; i += step) {
+      const v = data[i];
+      if (v > 0) {
+        hist[Math.min(bins - 1, Math.floor((v * bins) / 65536))] += 1;
+        count += 1;
+      }
+    }
+    if (!count) return [fallbackMin, fallbackMax];
+    const valueAt = (percent) => {
+      const target = Math.max(1, Math.round((percent / 100) * count));
+      let seen = 0;
+      for (let i = 0; i < bins; i += 1) {
+        seen += hist[i];
+        if (seen >= target) return ((i + 0.5) * 65536 / bins) * 0.001;
+      }
+      return fallbackMax;
+    };
+    const lo = valueAt(pmin);
+    const hi = valueAt(pmax);
+    return hi > lo ? [lo, hi] : [lo, lo + 0.000001];
+  }
+  function updatePredAutoRange(predData) {
+    const now = performance.now();
+    if (state.predAutoLastAt && now - state.predAutoLastAt < 250) return;
+    state.predAutoRange = histogramPercentileRange(
+      predData,
+      Number(els.pctMin.value),
+      Number(els.pctMax.value),
+      Number(els.predMin.value),
+      Number(els.predMax.value),
+    );
+    state.predAutoLastAt = now;
+  }
+
+  function fmtBytes(n) {
+    n = Number(n || 0);
+    if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`;
+    if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${n} B`;
+  }
+  function fmtBudget(n) {
+    n = Number(n);
+    return n === 0 ? 'off' : `${Math.round(n / 1000)}k`;
+  }
+  function fmtDistance(m) {
+    if (!Number.isFinite(m)) return 'no depth';
+    if (m < 1) return `${(m * 100).toFixed(1)} cm`;
+    return `${m.toFixed(3)} m`;
+  }
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[ch]));
+  }
+  function measurePanelLabel(kind) {
+    if (kind === 'raw') return 'Raw depth';
+    if (kind === 'pred') return 'Pred depth';
+    return 'RGB';
+  }
+  function measureMaxDepth() {
+    const readyMax = Number(state.ready && state.ready.max_depth);
+    if (Number.isFinite(readyMax) && readyMax > 0) return readyMax;
+    const cloudMax = Number(els.cloudMax.value);
+    return Number.isFinite(cloudMax) && cloudMax > 0 ? cloudMax : 10;
+  }
+  function samplePredDepthAtUv(uv) {
+    const w = Number(state.predDisplaySize[0] || 0);
+    const h = Number(state.predDisplaySize[1] || 0);
+    if (!state.textureAvailable.predDisplay || !w || !h) return null;
+    const x = clamp(Math.floor(clamp(uv[0], 0, 0.999999) * w), 0, w - 1);
+    const y = clamp(Math.floor(clamp(uv[1], 0, 0.999999) * h), 0, h - 1);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, predReadFramebuffer);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      predDisplayTexture(),
+      0,
+    );
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      state.upscale.warning = 'Prediction depth readback is unavailable; measurement disabled.';
+      return null;
+    }
+    const pixel = new Uint16Array(1);
+    gl.readBuffer(gl.COLOR_ATTACHMENT0);
+    gl.readPixels(x, y, 1, 1, gl.RED_INTEGER, gl.UNSIGNED_SHORT, pixel);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const mm = pixel[0];
+    const maxDepthMm = Math.round(measureMaxDepth() * 1000);
+    if (mm <= 0 || mm > maxDepthMm) return null;
+    return { x, y, mm, z: mm * 0.001, size: [w, h], radius: 0 };
+  }
+  function projectDepthSample(sample) {
+    if (!sample || !state.intr) return null;
+    const baseW = Number(state.intr.width || state.colorSize[0] || sample.size[0]);
+    const baseH = Number(state.intr.height || state.colorSize[1] || sample.size[1]);
+    const sx = sample.size[0] / Math.max(1, baseW);
+    const sy = sample.size[1] / Math.max(1, baseH);
+    const fx = Number(state.intr.fx || baseW) * sx;
+    const fy = Number(state.intr.fy || baseH) * sy;
+    const ppx = Number(state.intr.ppx || baseW / 2) * sx;
+    const ppy = Number(state.intr.ppy || baseH / 2) * sy;
+    if (!Number.isFinite(fx) || !Number.isFinite(fy) || fx <= 0 || fy <= 0) return null;
+    const px = sample.x + 0.5;
+    const py = sample.y + 0.5;
+    return {
+      x: ((px - ppx) / fx) * sample.z,
+      y: -((py - ppy) / fy) * sample.z,
+      z: sample.z,
+    };
+  }
+  function makeMeasurePoint(hit) {
+    const sample = samplePredDepthAtUv(hit.uv);
+    const point3d = projectDepthSample(sample);
+    return {
+      uv: [hit.uv[0], hit.uv[1]],
+      panelKind: hit.panelKind,
+      panelName: hit.panelName,
+      canvas: hit.canvas,
+      source: 'pred',
+      frameId: state.frameId,
+      sample,
+      point3d,
+      valid: Boolean(sample && point3d),
+    };
+  }
+  function measureDistance(a, b) {
+    if (!a || !b || !a.valid || !b.valid) return NaN;
+    const dx = a.point3d.x - b.point3d.x;
+    const dy = a.point3d.y - b.point3d.y;
+    const dz = a.point3d.z - b.point3d.z;
+    return Math.hypot(dx, dy, dz);
+  }
+  function clearMeasure() {
+    state.measure.lines = [];
+    state.measure.draftStart = null;
+    state.measure.draftHover = null;
+    syncMeasureOutputs();
+  }
+  function removeMeasureLine(id) {
+    const before = state.measure.lines.length;
+    state.measure.lines = state.measure.lines.filter((line) => line.id !== id);
+    if (state.measure.lines.length !== before) syncMeasureOutputs();
+  }
+  function latestMeasureLine() {
+    return state.measure.lines.length ? state.measure.lines[state.measure.lines.length - 1] : null;
+  }
+  function syncMeasureOutputs() {
+    const enabled = measureEnabled();
+    document.body.classList.toggle('measure-active', enabled);
+    let readout = '--';
+    let status = 'off';
+    const draftStart = state.measure.draftStart;
+    const draftHover = state.measure.draftHover;
+    const latestLine = latestMeasureLine();
+    if (enabled) {
+      if (!state.intr) {
+        status = 'waiting for camera intrinsics';
+      } else if (!state.textureAvailable.predDisplay) {
+        status = 'waiting for Pred depth';
+      } else if (!state.measure.panels.length) {
+        status = 'show a 2D image';
+      } else if (draftStart) {
+        const d = measureDistance(draftStart, draftHover);
+        readout = fmtDistance(d);
+        const panel = measurePanelLabel(draftStart.panelKind);
+        status = draftHover
+          ? (Number.isFinite(d) ? `click or press m for second point in ${panel}` : 'no pred depth at point')
+          : `click or press m for second point in ${panel}`;
+      } else if (latestLine) {
+        const d = measureDistance(latestLine.start, latestLine.end);
+        readout = fmtDistance(d);
+        status = Number.isFinite(d)
+          ? `${state.measure.lines.length} line${state.measure.lines.length === 1 ? '' : 's'} measured with Pred depth`
+          : 'latest line has no pred depth';
+      } else {
+        status = 'click or press m for first point on a 2D image';
+      }
+    }
+    state.measure.status = status;
+    els.measureReadout.textContent = readout;
+    els.measureStatus.textContent = status;
+    els.measureClear.disabled = !state.measure.lines.length && !draftStart && !draftHover;
+  }
+  function canvasPointFromEvent(event) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width / Math.max(1, rect.width);
+    const sy = canvas.height / Math.max(1, rect.height);
+    return {
+      x: (event.clientX - rect.left) * sx,
+      y: (event.clientY - rect.top) * sy,
+    };
+  }
+  function hitTestMeasurePanel(event, panelKind = null) {
+    const p = canvasPointFromEvent(event);
+    const panels = panelKind
+      ? state.measure.panels.filter((panel) => panel.kind === panelKind)
+      : state.measure.panels;
+    for (const panel of panels) {
+      const r = panel.rect;
+      if (p.x < r.x || p.x > r.x + r.w || p.y < r.y || p.y > r.y + r.h) continue;
+      const u = clamp((p.x - r.x) / Math.max(1, r.w), 0, 1);
+      const v = clamp((p.y - r.y) / Math.max(1, r.h), 0, 1);
+      return {
+        uv: [u, v],
+        panelKind: panel.kind,
+        panelName: panel.name,
+        canvas: p,
+      };
+    }
+    return null;
+  }
+  function rememberMeasurePointer(event) {
+    state.measure.pointerClient = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+  }
+  function updateMeasureHover(event) {
+    rememberMeasurePointer(event);
+    if (!measureEnabled() || !state.measure.draftStart) return;
+    const now = performance.now();
+    if (now - state.measure.lastHoverSampleAt < 1000 / 15) return;
+    state.measure.lastHoverSampleAt = now;
+    const hit = hitTestMeasurePanel(event, state.measure.draftStart.panelKind);
+    state.measure.draftHover = hit ? makeMeasurePoint(hit) : null;
+    syncMeasureOutputs();
+  }
+  function handleMeasureTrigger(event) {
+    if (!measureEnabled() || !event) return false;
+    const draftStart = state.measure.draftStart;
+    const hit = hitTestMeasurePanel(event, draftStart ? draftStart.panelKind : null);
+    if (!hit) {
+      state.measure.draftHover = null;
+      syncMeasureOutputs();
+      return Boolean(draftStart);
+    }
+    const point = makeMeasurePoint(hit);
+    if (!draftStart) {
+      state.measure.draftStart = point;
+      state.measure.draftHover = null;
+    } else {
+      state.measure.lines.push({
+        id: state.measure.nextLineId++,
+        panelKind: draftStart.panelKind,
+        frameId: state.frameId,
+        start: draftStart,
+        end: point,
+        labelOffset: { x: 0, y: 0 },
+      });
+      state.measure.draftStart = null;
+      state.measure.draftHover = null;
+    }
+    syncMeasureOutputs();
+    return true;
+  }
+  function handleMeasureClick(event) {
+    if (event.button !== 0) return false;
+    rememberMeasurePointer(event);
+    return handleMeasureTrigger(event);
+  }
+  function triggerMeasureAtPointer() {
+    return handleMeasureTrigger(state.measure.pointerClient);
+  }
+  function currentMeasureCanvasPoint(point) {
+    if (!point) return null;
+    const panel = state.measure.panels.find((p) => p.kind === point.panelKind);
+    if (!panel) return null;
+    return {
+      x: panel.rect.x + point.uv[0] * panel.rect.w,
+      y: panel.rect.y + point.uv[1] * panel.rect.h,
+    };
+  }
+  function canvasToClientPoint(point) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + (point.x / Math.max(1, canvas.width)) * rect.width,
+      y: rect.top + (point.y / Math.max(1, canvas.height)) * rect.height,
+    };
+  }
+  function measurePointHtml(point) {
+    const canvasPoint = currentMeasureCanvasPoint(point);
+    if (!canvasPoint) return '';
+    const p = canvasToClientPoint(canvasPoint);
+    const cls = point.valid ? 'measure-point' : 'measure-point invalid';
+    return `<span class="${cls}" style="left:${p.x.toFixed(1)}px;top:${p.y.toFixed(1)}px"></span>`;
+  }
+  function measureLineHtml(start, end, lineId = null, labelOffset = null) {
+    let html = '';
+    let hasLine = false;
+    if (start && end) {
+      const canvasA = currentMeasureCanvasPoint(start);
+      const canvasB = currentMeasureCanvasPoint(end);
+      if (canvasA && canvasB) {
+        const a = canvasToClientPoint(canvasA);
+        const b = canvasToClientPoint(canvasB);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length = Math.hypot(dx, dy);
+        const capHalfLength = 10;
+        const normalX = length > 0 ? (-dy / length) * capHalfLength : 0;
+        const normalY = length > 0 ? (dx / length) * capHalfLength : capHalfLength;
+        const d = measureDistance(start, end);
+        const text = fmtDistance(d);
+        const stroke = Number.isFinite(d) ? 'var(--accent)' : 'var(--bad)';
+        const mx = (a.x + b.x) * 0.5;
+        const my = (a.y + b.y) * 0.5;
+        const ox = labelOffset ? labelOffset.x : 0;
+        const oy = labelOffset ? labelOffset.y : 0;
+        const labelCls = lineId == null
+          ? 'label measure-label'
+          : 'label measure-label measure-label-movable';
+        const labelAttrs = lineId == null ? '' : ` data-measure-id="${lineId}"`;
+        const delBtn = lineId == null
+          ? ''
+          : `<button class="measure-del" type="button" data-measure-id="${lineId}" aria-label="Delete this measurement" title="Delete measurement">&times;</button>`;
+        html += `<svg class="measure-svg">`
+          + `<line class="measure-line" style="stroke:${stroke}" x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}"></line>`
+          + `<line class="measure-cap" style="stroke:${stroke}" x1="${(a.x - normalX).toFixed(1)}" y1="${(a.y - normalY).toFixed(1)}" x2="${(a.x + normalX).toFixed(1)}" y2="${(a.y + normalY).toFixed(1)}"></line>`
+          + `<line class="measure-cap" style="stroke:${stroke}" x1="${(b.x - normalX).toFixed(1)}" y1="${(b.y - normalY).toFixed(1)}" x2="${(b.x + normalX).toFixed(1)}" y2="${(b.y + normalY).toFixed(1)}"></line>`
+          + `</svg>`;
+        html += `<span class="${labelCls}"${labelAttrs} style="left:${(mx + 10 + ox).toFixed(1)}px;top:${(my - 18 + oy).toFixed(1)}px">${escapeHtml(text)}${delBtn}</span>`;
+        hasLine = true;
+      }
+    }
+    if (!hasLine) {
+      html += measurePointHtml(start);
+      html += measurePointHtml(end);
+    }
+    return html;
+  }
+  function measureOverlayHtml() {
+    const draftStart = state.measure.draftStart;
+    const draftHover = state.measure.draftHover;
+    if (!state.measure.lines.length && !draftStart && !draftHover) return '';
+    let html = '';
+    for (const line of state.measure.lines) {
+      html += measureLineHtml(line.start, line.end, line.id, line.labelOffset);
+    }
+    html += measureLineHtml(draftStart, draftHover);
+    return html;
+  }
+  function tickDisplayFps(now, displayedNewFrame) {
+    const meter = state.displayFps;
+    const windowMs = 3000;
+    if (displayedNewFrame) {
+      meter.samples.push(now);
+      meter.lastFrameAt = now;
+    }
+    const cutoff = now - windowMs;
+    while (meter.samples.length && meter.samples[0] < cutoff) meter.samples.shift();
+    if (now - meter.lastUpdateAt < 250) return;
+    const prev = meter.latest;
+    if (meter.samples.length >= 2) {
+      const elapsed = meter.samples[meter.samples.length - 1] - meter.samples[0];
+      const next = elapsed > 0 ? ((meter.samples.length - 1) * 1000) / elapsed : 0;
+      meter.latest = meter.latest > 0 ? meter.latest * 0.65 + next * 0.35 : next;
+    } else if (meter.lastFrameAt && now - meter.lastFrameAt > 1000) {
+      meter.latest = 0;
+    }
+    meter.lastUpdateAt = now;
+    if (Math.abs(prev - meter.latest) >= 0.05 || Boolean(prev) !== Boolean(meter.latest)) {
+      markOutputsDirty();
+    }
+  }
+  function tickRenderFps(now) {
+    const meter = state.renderFps;
+    if (!meter.sampleAt) {
+      meter.sampleAt = now;
+      meter.frames = 0;
+      return;
+    }
+    meter.frames += 1;
+    const elapsed = now - meter.sampleAt;
+    if (elapsed >= 1000) {
+      meter.latest = (meter.frames * 1000) / elapsed;
+      meter.sampleAt = now;
+      meter.frames = 0;
+      markOutputsDirty();
+    }
+  }
+  function decimalsForStep(step) {
+    if (!step || step >= 1) return 0;
+    const raw = String(step);
+    return raw.includes('.') ? raw.split('.')[1].length : 0;
+  }
+  function formatSliderValue(value, step) {
+    const decimals = decimalsForStep(step);
+    return decimals ? Number(value).toFixed(decimals) : String(Math.round(Number(value)));
+  }
+  function normalizeSliderValue(control, value) {
+    let next = Number(value);
+    if (!Number.isFinite(next)) {
+      next = Number(control.range.value || control.defaultValue || 0);
+    }
+    next = clamp(next, control.min, control.max);
+    if (control.step > 0) {
+      next = control.min + Math.round((next - control.min) / control.step) * control.step;
+      next = clamp(next, control.min, control.max);
+    }
+    return Number(next.toFixed(8));
+  }
+  function setSliderValue(id, value, options = {}) {
+    const control = sliderControls.get(id);
+    if (!control) return '';
+    const next = normalizeSliderValue(control, value);
+    const text = formatSliderValue(next, control.step);
+    control.range.value = text;
+    control.number.value = text;
+    if (options.updateDefault) control.defaultValue = text;
+    if (options.notify !== false) handleSliderInput(id);
+    return text;
+  }
+  function handleSliderInput(id) {
+    if (id === 'cloud-yaw' || id === 'cloud-pitch') {
+      setViewFromSliders();
+    }
+    syncOutputs();
+  }
+  function handleSliderCommit(id) {
+    if (id === 'stream-fps' || id === 'point-stride' || id === 'point-budget') {
+      handleStreamSelectionChange();
+    }
+  }
+  function handleStreamSelectionChange() {
+    const selection = streamSelection();
+    const nextKey = streamKey(selection);
+    state.ui.labelsDirty = true;
+    if (!hasAnyStream(selection)) {
+      closeWs();
+      return;
+    }
+    if (state.ws && nextKey !== state.streamKey) {
+      closeWs();
+      if (state.lastStatus.camera_status === 'running') setTimeout(connectWs, 80);
+      return;
+    }
+    if (!state.ws && state.lastStatus.camera_status === 'running') {
+      connectWs();
+    }
+  }
+  function handleCheckboxInput(el) {
+    if (el.id === 'inference-enabled') return;
+    if (el.id === 'measure-enabled') {
+      if (el.checked && !els.showRgb.checked && !els.showRaw.checked && !els.showPred.checked) {
+        els.showPred.checked = true;
+      }
+      clearMeasure();
+    }
+    syncOutputs();
+    state.ui.labelsDirty = true;
+    if (streamControlIds.has(el.id)) {
+      handleStreamSelectionChange();
+    }
+  }
+  function resetAllSliders() {
+    const previousStreamKey = streamKey();
+    sliderControls.forEach((control, id) => {
+      setSliderValue(id, control.defaultValue, { notify: false });
+    });
+    setViewFromSliders();
+    syncOutputs();
+    if (previousStreamKey !== streamKey()) handleStreamSelectionChange();
+  }
+  function wrapDegrees(deg) {
+    let out = ((deg + 180) % 360 + 360) % 360 - 180;
+    if (out === -180 && deg > 0) out = 180;
+    return out;
+  }
+  function clamp(n, lo, hi) {
+    return Math.max(lo, Math.min(hi, n));
+  }
+  function syncViewSliders() {
+    const yaw = wrapDegrees(state.view.yaw * RAD);
+    const pitch = clamp(state.view.pitch * RAD, -80, 80);
+    setSliderValue('cloud-yaw', yaw, { notify: false });
+    setSliderValue('cloud-pitch', pitch, { notify: false });
+  }
+  function setViewFromSliders() {
+    state.view.yaw = wrapDegrees(Number(els.cloudYaw.value)) * DEG;
+    state.view.pitch = clamp(Number(els.cloudPitch.value), -80, 80) * DEG;
+  }
+  function defaultView() {
+    return { yaw: 4 * DEG, pitch: 5 * DEG, distance: 2.8, panX: 0, panY: 0 };
+  }
+  function orbitOffsetDeg(mode, ampX, ampY, phase) {
+    // 相对 base 视角的 (俯仰 rx, 偏航 ry) 偏移(度)，公式同 _orbit_common.build_orbit_angles。
+    // ellipse 的俯仰用 (cosθ-1) 做零起点：相位 0 处偏移为 0，保证从当前视角平滑出发、
+    // 每满整圈无缝回到原位（一直转也不抖）。
+    const s = Math.sin(phase);
+    if (mode === 'swing') return [ampX * s, ampY * s];
+    if (mode === 'horizontal') return [0, ampY * s];
+    if (mode === 'vertical') return [ampX * s, 0];
+    return [ampX * (Math.cos(phase) - 1), ampY * s]; // ellipse(默认)
+  }
+  function syncOrbitButton() {
+    els.orbitBtn.textContent = state.orbit.active ? 'Stop orbit ◼' : 'Orbit ▶';
+    els.orbitBtn.classList.toggle('recording', state.orbit.active);
+  }
+  function startOrbit() {
+    // 快照当前视角为环绕中心，相位归零；轨道期间逐帧叠加偏移。
+    state.orbit.active = true;
+    state.orbit.phase = 0;
+    state.orbit.baseYawDeg = state.view.yaw * RAD;
+    state.orbit.basePitchDeg = state.view.pitch * RAD;
+    state.orbit.lastSyncAt = 0;
+    syncOrbitButton();
+  }
+  function stopOrbit() {
+    if (!state.orbit.active) return;
+    state.orbit.active = false;
+    syncOrbitButton();
+    syncViewSliders();
+    markOutputsDirty();
+  }
+  function updateOrbit(dt, now) {
+    const period = Math.max(0.1, Number(els.orbitPeriod.value));
+    state.orbit.phase += (2 * Math.PI * dt) / period; // 增量累加：改周期不跳变
+    if (!els.orbitForever.checked) {
+      const loopsTarget = Math.max(1, Math.round(Number(els.orbitLoops.value)));
+      if (state.orbit.phase >= 2 * Math.PI * loopsTarget) {
+        // 跑满整数圈：偏移回到 0，收尾停在原位。
+        state.view.yaw = wrapDegrees(state.orbit.baseYawDeg) * DEG;
+        state.view.pitch = clamp(state.orbit.basePitchDeg, -80, 80) * DEG;
+        stopOrbit();
+        return;
+      }
+    }
+    const [rxDeg, ryDeg] = orbitOffsetDeg(
+      els.orbitMode.value,
+      Number(els.orbitAmpX.value),
+      Number(els.orbitAmpY.value),
+      state.orbit.phase,
+    );
+    state.view.yaw = wrapDegrees(state.orbit.baseYawDeg + ryDeg) * DEG;
+    state.view.pitch = clamp(state.orbit.basePitchDeg + rxDeg, -80, 80) * DEG;
+    if (now - state.orbit.lastSyncAt >= 250) {
+      syncViewSliders();
+      state.orbit.lastSyncAt = now;
+      markOutputsDirty();
+    }
+  }
+  function applyDemoModeDefaults() {
+    if (!demoMode) return;
+    document.body.classList.add('demo-mode');
+    els.showRgb.checked = true;
+    els.showRaw.checked = true;
+    els.showPred.checked = true;
+    els.showRawCloud.checked = false;
+    els.showPredCloud.checked = true;
+    els.predAuto.checked = false;
+    state.ui.labelsDirty = true;
+    markOutputsDirty();
+  }
+  // Offset of the "-" button's top-left relative to the panel's top-left,
+  // captured at minimize time so the "+" chip collapses in place and the panel
+  // can later grow back out from wherever the chip currently sits.
+  let panelBtnOffset = null;
+  function setPanelMinimized(minimized) {
+    if (minimized) {
+      if (!document.body.classList.contains('panel-min')) {
+        const panelRect = els.panel.getBoundingClientRect();
+        const btnRect = els.panelMinBtn.getBoundingClientRect();
+        panelBtnOffset = {
+          dx: btnRect.left - panelRect.left,
+          dy: btnRect.top - panelRect.top,
+        };
+        els.panelFab.style.left = `${btnRect.left}px`;
+        els.panelFab.style.top = `${btnRect.top}px`;
+        els.panelFab.style.right = 'auto';
+        els.panelFab.style.bottom = 'auto';
+      }
+      document.body.classList.add('panel-min');
+      clampToViewport(els.panelFab);
+    } else {
+      if (panelBtnOffset && els.panelFab.style.left && els.panelFab.style.left !== 'auto') {
+        const fabRect = els.panelFab.getBoundingClientRect();
+        els.panel.style.left = `${fabRect.left - panelBtnOffset.dx}px`;
+        els.panel.style.top = `${fabRect.top - panelBtnOffset.dy}px`;
+        els.panel.style.right = 'auto';
+        els.panel.style.bottom = 'auto';
+      }
+      document.body.classList.remove('panel-min');
+      clampToViewport(els.panel);
+    }
+  }
+  // Minimum pixels of a draggable element kept on-screen so it can never be
+  // lost off-screen. The panel can slide well past the left/right/bottom edges,
+  // but its top edge never goes above the viewport, so the header (drag handle
+  // and "-" button) always stays reachable.
+  const EDGE_KEEP = 48;
+  function clampPosition(el, left, top) {
+    const keepX = Math.min(EDGE_KEEP, el.offsetWidth);
+    const keepY = Math.min(EDGE_KEEP, el.offsetHeight);
+    return {
+      left: Math.min(window.innerWidth - keepX, Math.max(keepX - el.offsetWidth, left)),
+      top: Math.min(window.innerHeight - keepY, Math.max(0, top)),
+    };
+  }
+  // Re-clamp a fixed-positioned element. Only acts once the element has been
+  // moved to explicit left/top anchoring (i.e. dragged or positioned by JS).
+  function clampToViewport(el) {
+    if (!el || el.style.left === '' || el.style.left === 'auto') return;
+    if (el.offsetParent === null && el.offsetWidth === 0) return;
+    const { left, top } = clampPosition(
+      el, parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0,
+    );
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  }
+  // Make `el` draggable by pressing `handle`. Switches `el` from its CSS
+  // right/bottom anchoring to explicit left/top on first drag. `onClick` fires
+  // when the pointer is released without meaningful movement (treated as a tap).
+  function makeDraggable(el, handle, { ignoreSelector = null, onClick = null } = {}) {
+    const CLICK_SLOP = 4;
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let originLeft = 0;
+    let originTop = 0;
+    let moved = false;
+
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 && event.pointerType === 'mouse') return;
+      if (ignoreSelector && event.target.closest(ignoreSelector)) return;
+      const rect = el.getBoundingClientRect();
+      originLeft = rect.left;
+      originTop = rect.top;
+      el.style.left = `${originLeft}px`;
+      el.style.top = `${originTop}px`;
+      el.style.right = 'auto';
+      el.style.bottom = 'auto';
+      startX = event.clientX;
+      startY = event.clientY;
+      moved = false;
+      pointerId = event.pointerId;
+      handle.setPointerCapture(pointerId);
+      event.preventDefault();
+    });
+    handle.addEventListener('pointermove', (event) => {
+      if (pointerId === null || event.pointerId !== pointerId) return;
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (Math.abs(dx) > CLICK_SLOP || Math.abs(dy) > CLICK_SLOP) moved = true;
+      const { left, top } = clampPosition(el, originLeft + dx, originTop + dy);
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+    });
+    const endDrag = (event) => {
+      if (pointerId === null || event.pointerId !== pointerId) return;
+      try { handle.releasePointerCapture(pointerId); } catch (_e) { /* ignore */ }
+      pointerId = null;
+      if (!moved && onClick) onClick(event);
+    };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+  }
+  function isBrowserFullscreen() {
+    return Boolean(
+      document.fullscreenElement
+        || document.webkitFullscreenElement
+        || document.mozFullScreenElement
+        || document.msFullscreenElement
+    );
+  }
+  async function requestBrowserFullscreen() {
+    const target = document.documentElement;
+    const fn = target.requestFullscreen
+      || target.webkitRequestFullscreen
+      || target.mozRequestFullScreen
+      || target.msRequestFullscreen;
+    if (!fn) throw new Error('Browser fullscreen API unavailable');
+    await fn.call(target);
+  }
+  async function exitBrowserFullscreen() {
+    const fn = document.exitFullscreen
+      || document.webkitExitFullscreen
+      || document.mozCancelFullScreen
+      || document.msExitFullscreen;
+    if (!fn) throw new Error('Browser fullscreen API unavailable');
+    await fn.call(document);
+  }
+  function syncFullscreenButton() {
+    els.fullscreen.textContent = isBrowserFullscreen() ? 'Exit full' : 'Fullscreen';
+  }
+  function setConn(kind, text) {
+    els.connPill.classList.remove('live', 'warn', 'bad');
+    if (kind) els.connPill.classList.add(kind);
+    els.connText.textContent = text;
+  }
+  // The merged Connect/Disconnect toggle: shows the action that the current
+  // camera state allows. `connectedish` covers running/connecting (i.e. the
+  // states where the old code enabled Disconnect).
+  function setConnToggle(connectedish) {
+    els.connect.textContent = connectedish ? 'Disconnect' : 'Connect';
+    els.connect.classList.toggle('primary', !connectedish);
+    els.connect.setAttribute(
+      'aria-label', connectedish ? 'Disconnect camera' : 'Connect camera',
+    );
+  }
+  function markOutputsDirty() {
+    state.ui.outputsDirty = true;
+  }
+  function setLabelsHtml(html) {
+    if (state.ui.labelsHtml === html) return;
+    state.ui.labelsHtml = html;
+    labelsEl.innerHTML = html;
+  }
+  function noVisualizationLabel() {
+    return '<span class="label" style="left:18px;top:58px">No visualization enabled</span>';
+  }
+  function syncOutputs() {
+    const rawMin = Number(els.rawMin.value);
+    const rawMax = Math.max(Number(els.rawMax.value), rawMin + 0.01);
+    const predMin = Number(els.predMin.value);
+    const predMax = Math.max(Number(els.predMax.value), predMin + 0.01);
+    els.rawMinOut.textContent = `${rawMin.toFixed(2)} m`;
+    els.rawMaxOut.textContent = `${rawMax.toFixed(2)} m`;
+    els.predMinOut.textContent = `${predMin.toFixed(2)} m`;
+    els.predMaxOut.textContent = `${predMax.toFixed(2)} m`;
+    els.pctMinOut.textContent = `${Number(els.pctMin.value).toFixed(1)}%`;
+    els.pctMaxOut.textContent = `${Number(els.pctMax.value).toFixed(1)}%`;
+    els.pointSizeOut.textContent = Number(els.pointSize.value).toFixed(1);
+    const strideState = activeCloudStrideState();
+    els.pointStrideOut.textContent = strideState.text;
+    els.pointBudgetOut.textContent = fmtBudget(els.pointBudget.value);
+    els.cloudMaxOut.textContent = `${Number(els.cloudMax.value).toFixed(1)} m`;
+    els.cloudYawOut.textContent = `${Math.round(Number(els.cloudYaw.value))} deg`;
+    els.cloudPitchOut.textContent = `${Math.round(Number(els.cloudPitch.value))} deg`;
+    els.rotateSpeedOut.textContent = `${Math.round(Number(els.rotateSpeed.value))} deg/s`;
+    els.orbitAmpXOut.textContent = `${Math.round(Number(els.orbitAmpX.value))} deg`;
+    els.orbitAmpYOut.textContent = `${Math.round(Number(els.orbitAmpY.value))} deg`;
+    els.orbitPeriodOut.textContent = `${Number(els.orbitPeriod.value).toFixed(1)} s`;
+    els.orbitLoopsOut.textContent = els.orbitLoops.value;
+    els.outlierRadiusOut.textContent = els.outlierRadius.value;
+    els.outlierDepthTolOut.textContent = `${Number(els.outlierDepthTol.value).toFixed(2)} m`;
+    els.outlierMinPtsOut.textContent = els.outlierMinPts.value;
+    els.streamFpsOut.textContent = els.streamFps.value === '0' ? 'uncapped' : els.streamFps.value;
+    const bytesPerFrame = state.payloadBytes || 0;
+    const fps = Number(els.streamFps.value) || state.stats.e2eWindowFps || Number(state.lastStatus.e2e_window_fps || state.lastStatus.e2e_fps || 0);
+    els.payloadRate.textContent = bytesPerFrame && fps ? `${fmtBytes(bytesPerFrame * fps)}/s` : '--';
+    els.serverFps.textContent = state.stats.serverFpsText;
+    els.runnerFps.textContent = state.stats.runnerFpsText;
+    els.hudServerFps.textContent = state.stats.serverFpsText;
+    els.hudRunnerFps.textContent = state.stats.runnerFpsText;
+    els.frame.textContent = state.stats.frameText;
+    els.bytes.textContent = state.stats.bytesText;
+    els.renderFps.textContent = state.renderFps.latest > 0 ? state.renderFps.latest.toFixed(1) : '--';
+    const displayFpsText = state.displayFps.latest > 0 ? state.displayFps.latest.toFixed(1) : '--';
+    els.displayFps.textContent = displayFpsText;
+    els.hudDisplayFps.textContent = displayFpsText;
+    els.rawPoints.textContent = state.stats.rawPointsText;
+    els.predPoints.textContent = state.stats.predPointsText;
+    els.record.classList.toggle('recording', state.stats.recordOn);
+    els.record.textContent = state.stats.recordText;
+    const notices = [];
+    const strideMismatch = strideState.effective > strideState.requested;
+    if (strideMismatch) {
+      notices.push(
+        `Point budget requires stride ${strideState.effective}; requested ${strideState.requested}.`,
+      );
+    }
+    if (Number(els.pointStride.value) === 1 && Number(els.pointBudget.value) > 250000) {
+      notices.push('High 3D load: increase stride if browser rendering stalls.');
+    }
+    if (state.upscale.warning) notices.push(state.upscale.warning);
+    els.noticeText.textContent = notices.join(' ');
+    els.notice.hidden = notices.length === 0;
+    els.useEffectiveStride.hidden = !strideMismatch;
+    if (strideMismatch) {
+      els.useEffectiveStride.dataset.stride = String(strideState.effective);
+      els.useEffectiveStride.textContent = `Use stride ${strideState.effective}`;
+    }
+    syncMeasureOutputs();
+    state.ui.outputsDirty = false;
+  }
+  function flushUiOutputs(now, force = false) {
+    if (!force && !state.ui.outputsDirty && now - state.ui.lastStatsAt < 200) return;
+    if (force || state.ui.outputsDirty || now - state.ui.lastStatsAt >= 200) {
+      syncOutputs();
+      state.ui.lastStatsAt = now;
+    }
+  }
+
+  function wsUrl(selection = streamSelection()) {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const params = new URLSearchParams({
+      ws_stream_fps: els.streamFps.value,
+      send_color: selection.color ? '1' : '0',
+      send_raw: selection.raw ? '1' : '0',
+      send_pred: selection.pred ? '1' : '0',
+      send_raw_cloud: selection.rawCloud ? '1' : '0',
+      send_pred_cloud: selection.predCloud ? '1' : '0',
+      cloud_stride: els.pointStride.value,
+      cloud_point_budget: els.pointBudget.value,
+    });
+    return `${proto}//${location.host}/ws/realtime?${params.toString()}`;
+  }
+  function closeWsForProtocolError(ws, message) {
+    if (state.ws !== ws) return;
+    els.error.textContent = message;
+    setConn('bad', 'protocol error');
+    try {
+      ws.close(1002, message.slice(0, 120));
+    } catch (_) {}
+  }
+  function connectWs() {
+    if (state.ws || state.connected) return;
+    const selection = streamSelection();
+    if (!hasAnyStream(selection)) {
+      setConn('live', 'running');
+      return;
+    }
+    els.error.textContent = '';
+    setConn('warn', 'connecting');
+    state.streamKey = streamKey(selection);
+    markRequestedTexturesPending(selection);
+    const ws = new WebSocket(wsUrl(selection));
+    state.ws = ws;
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => {
+      if (state.ws === ws) setConn('live', 'live');
+    };
+    ws.onmessage = (event) => {
+      if (state.ws !== ws) return;
+      if (typeof event.data === 'string') {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'ready') {
+          const frameAckEnabled = (
+            msg.protocol === REALTIME_PROTOCOL
+            && msg.flow_control === REALTIME_FLOW_CONTROL
+            && Number(msg.max_in_flight_frames) === 1
+          );
+          const legacyEnabled = (
+            msg.protocol === REALTIME_LEGACY_PROTOCOL
+            && msg.flow_control == null
+          );
+          if (!frameAckEnabled && !legacyEnabled) {
+            closeWsForProtocolError(ws, 'unsupported realtime WebSocket protocol');
+            return;
+          }
+          state.frameAckEnabled = frameAckEnabled;
+          state.ready = msg;
+          uploadLut(msg.colormap_lut_rgb || []);
+          setSliderValue('raw-min', msg.vis_min ?? 0.1, { notify: false, updateDefault: true });
+          setSliderValue('raw-max', msg.vis_max ?? 5.0, { notify: false, updateDefault: true });
+          setSliderValue('pred-min', msg.vis_min ?? 0.1, { notify: false, updateDefault: true });
+          setSliderValue('pred-max', msg.vis_max ?? 5.0, { notify: false, updateDefault: true });
+          if (msg.pred_vis_percentile_min != null) {
+            setSliderValue('pct-min', msg.pred_vis_percentile_min, { notify: false, updateDefault: true });
+          }
+          if (msg.pred_vis_percentile_max != null) {
+            setSliderValue('pct-max', msg.pred_vis_percentile_max, { notify: false, updateDefault: true });
+          }
+            syncOutputs();
+          } else if (msg.type === 'frame') {
+            if (state.expectPayload || state.pendingHeader) {
+              closeWsForProtocolError(ws, 'received frame header before previous payload');
+              return;
+            }
+            state.pendingHeader = msg;
+            state.expectPayload = true;
+        } else if (msg.type === 'error') {
+          els.error.textContent = msg.message || 'stream error';
+          setConn('bad', 'error');
+        }
+          return;
+        }
+        if (!state.expectPayload || !state.pendingHeader) {
+          closeWsForProtocolError(ws, 'received unexpected frame payload');
+          return;
+        }
+        const header = state.pendingHeader;
+        if (!(event.data instanceof ArrayBuffer)) {
+          closeWsForProtocolError(ws, 'realtime frame payload is not an ArrayBuffer');
+          return;
+        }
+        const expectedBytes = Number(header.payload_bytes);
+        if (Number.isFinite(expectedBytes) && expectedBytes !== event.data.byteLength) {
+          closeWsForProtocolError(ws, 'realtime frame payload size mismatch');
+          return;
+        }
+        queueFrame(header, event.data);
+        state.expectPayload = false;
+        state.pendingHeader = null;
+        if (state.frameAckEnabled && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'frame_ack', frame_id: header.frame_id }));
+        }
+    };
+    ws.onerror = () => {
+      if (state.ws !== ws) return;
+      els.error.textContent = 'websocket error';
+      setConn('bad', 'error');
+    };
+    ws.onclose = () => {
+      if (state.ws !== ws) return;
+      state.ws = null;
+      state.streamKey = '';
+      state.expectPayload = false;
+      state.pendingHeader = null;
+      state.frameAckEnabled = false;
+      state.pendingFrame = null;
+      state.depthData.raw = null;
+      state.depthData.pred = null;
+      syncMeasureOutputs();
+      if (state.lastStatus.camera_status === 'running') setConn('warn', 'disconnected');
+      else setConn('', state.lastStatus.camera_status || 'idle');
+    };
+  }
+  function closeWs() {
+    if (state.ws) state.ws.close();
+    state.ws = null;
+    state.streamKey = '';
+    state.expectPayload = false;
+    state.pendingHeader = null;
+    state.frameAckEnabled = false;
+    state.pendingFrame = null;
+    state.depthData.raw = null;
+    state.depthData.pred = null;
+    syncMeasureOutputs();
+  }
+
+  async function post(url) {
+    const r = await fetch(url, { method: 'POST' });
+    if (!r.ok) {
+      const detail = await r.json().catch(() => ({}));
+      els.error.textContent = detail.detail || `${url} failed`;
+      return null;
+    }
+    return await r.json().catch(() => ({}));
+  }
+  async function toggleInference(enabled) {
+    const previous = state.inferenceEnabled !== false;
+    state.inferenceTogglePending = true;
+    els.inferenceEnabled.disabled = true;
+    const next = await post(`/inference?enabled=${enabled ? 'true' : 'false'}`);
+    state.inferenceTogglePending = false;
+    if (next) {
+      state.lastStatus = next;
+      applyInferenceState(Boolean(next.inference_enabled), {
+        revision: next.inference_revision,
+      });
+    } else {
+      els.inferenceEnabled.checked = previous;
+    }
+    await refreshStatus();
+  }
+  async function refreshStatus() {
+    try {
+      const r = await fetch('/status', { cache: 'no-store' });
+      if (!r.ok) throw new Error(String(r.status));
+      const s = await r.json();
+      state.lastStatus = s;
+      applyInferenceState(Boolean(s.inference_enabled), {
+        revision: s.inference_revision,
+      });
+      const status = s.camera_status || 'idle';
+      const active = status === 'running';
+      if (active) {
+        setConn('live', state.ws ? 'live' : 'running');
+        connectWs();
+      } else if (status === 'connecting' || status === 'disconnecting') {
+        setConn('warn', status);
+      } else if (status === 'error') {
+        setConn('bad', 'error');
+        els.error.textContent = s.camera_error || 'camera error';
+        closeWs();
+      } else {
+        setConn('', status);
+        closeWs();
+      }
+      setConnToggle(active || status === 'connecting');
+      els.inferenceEnabled.disabled = state.inferenceTogglePending || Boolean(s.record_on);
+      els.record.disabled = !active || !s.record_allowed || !s.inference_enabled;
+      state.stats.recordOn = Boolean(s.record_on);
+      state.stats.recordText = s.record_on ? 'Pause rec' : 'Record';
+      els.session.textContent = s.session_dir || '(no recording)';
+      markOutputsDirty();
+    } catch (e) {
+      setConn('bad', 'offline');
+    }
+  }
+
+  els.connect.onclick = async () => {
+    const status = (state.lastStatus && state.lastStatus.camera_status) || 'idle';
+    if (status === 'running' || status === 'connecting') {
+      await post('/camera/disconnect');
+      closeWs();
+      refreshStatus();
+    } else {
+      const s = await post('/camera/connect');
+      if (s) refreshStatus();
+    }
+  };
+  els.record.onclick = async () => {
+    await post('/record/toggle');
+    refreshStatus();
+  };
+  els.quit.onclick = async () => {
+    if (!confirm('Quit the realtime service?')) return;
+    await post('/quit');
+    closeWs();
+    refreshStatus();
+  };
+  els.reset.onclick = () => {
+    stopOrbit();
+    state.view = defaultView();
+    syncViewSliders();
+    syncOutputs();
+  };
+  els.orbitBtn.onclick = () => {
+    if (state.orbit.active) stopOrbit();
+    else startOrbit();
+  };
+  els.resetSliders.onclick = resetAllSliders;
+  els.measureClear.onclick = clearMeasure;
+  // Per-line delete: the "×" chips live inside the pointer-events:none labels
+  // overlay but opt back in via pointer-events:auto, so a delegated click here
+  // catches them without interfering with canvas measurement clicks.
+  labelsEl.addEventListener('click', (event) => {
+    const btn = event.target.closest('.measure-del');
+    if (!btn) return;
+    event.preventDefault();
+    event.stopPropagation();
+    removeMeasureLine(Number(btn.dataset.measureId));
+  });
+  // Drag a measurement's distance label out of the way. The label is recreated
+  // every frame, so the drag is tracked at window level against the line's
+  // persisted labelOffset rather than via element-level pointer capture.
+  labelsEl.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    if (event.target.closest('.measure-del')) return;
+    const label = event.target.closest('.measure-label-movable');
+    if (!label) return;
+    const line = state.measure.lines.find((l) => l.id === Number(label.dataset.measureId));
+    if (!line) return;
+    const offset = line.labelOffset || { x: 0, y: 0 };
+    state.measure.labelDrag = {
+      id: line.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      baseX: offset.x,
+      baseY: offset.y,
+    };
+    event.preventDefault();
+  });
+  window.addEventListener('pointermove', (event) => {
+    const drag = state.measure.labelDrag;
+    if (!drag) return;
+    const line = state.measure.lines.find((l) => l.id === drag.id);
+    if (!line) {
+      state.measure.labelDrag = null;
+      return;
+    }
+    line.labelOffset = {
+      x: drag.baseX + (event.clientX - drag.startX),
+      y: drag.baseY + (event.clientY - drag.startY),
+    };
+  });
+  const endLabelDrag = () => { state.measure.labelDrag = null; };
+  window.addEventListener('pointerup', endLabelDrag);
+  window.addEventListener('pointercancel', endLabelDrag);
+  els.inferenceEnabled.addEventListener('change', () => {
+    toggleInference(els.inferenceEnabled.checked);
+  });
+  els.useEffectiveStride.addEventListener('click', () => {
+    const effectiveStride = Number(els.useEffectiveStride.dataset.stride);
+    if (!Number.isFinite(effectiveStride)) return;
+    setSliderValue('point-stride', effectiveStride);
+    handleSliderCommit('point-stride');
+  });
+  els.panelMinBtn.onclick = () => setPanelMinimized(true);
+  makeDraggable(els.panel, els.panelHeader, { ignoreSelector: '.panel-min-btn' });
+  makeDraggable(els.panelFab, els.panelFab, {
+    onClick: () => setPanelMinimized(false),
+  });
+  window.addEventListener('resize', () => {
+    clampToViewport(els.panel);
+    clampToViewport(els.panelFab);
+  });
+  els.fullscreen.onclick = async () => {
+    try {
+      if (isBrowserFullscreen()) await exitBrowserFullscreen();
+      else await requestBrowserFullscreen();
+      syncFullscreenButton();
+    } catch (exc) {
+      els.error.textContent = exc.message || 'fullscreen failed';
+    }
+  };
+  document.querySelectorAll('.section-title').forEach((title) => {
+    title.setAttribute('role', 'button');
+    title.setAttribute('tabindex', '0');
+    const section = title.closest('.section');
+    title.setAttribute('aria-expanded', String(!section.classList.contains('collapsed')));
+    const toggle = () => {
+      const isCollapsed = section.classList.toggle('collapsed');
+      title.setAttribute('aria-expanded', String(!isCollapsed));
+    };
+    title.addEventListener('click', toggle);
+    title.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      toggle();
+    });
+  });
+  ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach((eventName) => {
+    document.addEventListener(eventName, syncFullscreenButton);
+  });
+  sliderControls.forEach((control, id) => {
+    control.range.addEventListener('input', () => {
+      setSliderValue(id, control.range.value);
+    });
+    control.number.addEventListener('input', () => {
+      setSliderValue(id, control.number.value);
+    });
+    control.range.addEventListener('change', () => handleSliderCommit(id));
+    control.number.addEventListener('change', () => {
+      setSliderValue(id, control.number.value);
+      handleSliderCommit(id);
+    });
+  });
+  document.querySelectorAll('input[type="checkbox"]').forEach((el) => el.addEventListener('input', () => handleCheckboxInput(el)));
+  if (window.ResizeObserver && els.topbar) {
+    const topbarObserver = new ResizeObserver(refreshTopSafeInset);
+    topbarObserver.observe(els.topbar);
+  }
+  window.addEventListener('resize', refreshTopSafeInset);
+
+  let drag = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    if (handleMeasureClick(e)) {
+      e.preventDefault();
+      return;
+    }
+    canvas.setPointerCapture(e.pointerId);
+    drag = { x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button === 1 };
+    stopOrbit(); // 手动拖拽优先：停止自动环绕，避免与拖拽争夺视角
+  });
+  canvas.addEventListener('pointerenter', rememberMeasurePointer);
+  canvas.addEventListener('pointermove', (e) => {
+    updateMeasureHover(e);
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.pan) {
+      const s = state.view.distance * 0.0012;
+      state.view.panX += dx * s;
+      state.view.panY -= dy * s;
+    } else {
+      state.view.yaw += dx * 0.006;
+      state.view.yaw = wrapDegrees(state.view.yaw * RAD) * DEG;
+      state.view.pitch = clamp(state.view.pitch + dy * 0.006, -80 * DEG, 80 * DEG);
+      syncViewSliders();
+      markOutputsDirty();
+    }
+  });
+  canvas.addEventListener('pointerleave', () => {
+    state.measure.pointerClient = null;
+  });
+  canvas.addEventListener('pointerup', () => { drag = null; });
+  canvas.addEventListener('pointercancel', () => { drag = null; });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    state.view.distance = Math.max(0.25, Math.min(14, state.view.distance * Math.exp(e.deltaY * 0.001)));
+  }, { passive: false });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && measureEnabled()) {
+      clearMeasure();
+      return;
+    }
+    const target = e.target;
+    const editingText = target instanceof HTMLElement && (
+      target.isContentEditable
+      || target.tagName === 'INPUT'
+      || target.tagName === 'TEXTAREA'
+      || target.tagName === 'SELECT'
+    );
+    if (
+      e.key.toLowerCase() !== 'm'
+      || e.repeat
+      || e.ctrlKey
+      || e.metaKey
+      || e.altKey
+      || editingText
+    ) return;
+    if (triggerMeasureAtPointer()) e.preventDefault();
+  });
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+    const h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w; canvas.height = h;
+      state.ui.labelsDirty = true;
+    }
+  }
+  const matrixScratch = {
+    proj: new Float32Array(16),
+    camera: new Float32Array(16),
+    rx: new Float32Array(16),
+    ry: new Float32Array(16),
+    model: new Float32Array(16),
+    view: new Float32Array(16),
+    mvp: new Float32Array(16),
+  };
+  function mat4PerspectiveOut(out, fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+    out[0] = f / aspect; out[1] = 0; out[2] = 0; out[3] = 0;
+    out[4] = 0; out[5] = f; out[6] = 0; out[7] = 0;
+    out[8] = 0; out[9] = 0; out[10] = (far + near) * nf; out[11] = -1;
+    out[12] = 0; out[13] = 0; out[14] = (2 * far * near) * nf; out[15] = 0;
+    return out;
+  }
+  function mat4MultiplyOut(out, a, b) {
+    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+      out[c * 4 + r] = a[0 * 4 + r] * b[c * 4 + 0] + a[1 * 4 + r] * b[c * 4 + 1] + a[2 * 4 + r] * b[c * 4 + 2] + a[3 * 4 + r] * b[c * 4 + 3];
+    }
+    return out;
+  }
+  function mat4TranslateOut(out, x, y, z) {
+    out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0;
+    out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;
+    out[8] = 0; out[9] = 0; out[10] = 1; out[11] = 0;
+    out[12] = x; out[13] = y; out[14] = z; out[15] = 1;
+    return out;
+  }
+  function mat4RotateXOut(out, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0;
+    out[4] = 0; out[5] = c; out[6] = s; out[7] = 0;
+    out[8] = 0; out[9] = -s; out[10] = c; out[11] = 0;
+    out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+    return out;
+  }
+  function mat4RotateYOut(out, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    out[0] = c; out[1] = 0; out[2] = -s; out[3] = 0;
+    out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;
+    out[8] = s; out[9] = 0; out[10] = c; out[11] = 0;
+    out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+    return out;
+  }
+  function viewportTop(region) {
+    gl.viewport(region.x, canvas.height - region.y - region.h, region.w, region.h);
+  }
+  function scissorTop(region) {
+    gl.scissor(region.x, canvas.height - region.y - region.h, region.w, region.h);
+  }
+  function clearFullFrame(mask = gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT) {
+    gl.disable(gl.SCISSOR_TEST);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clear(mask);
+  }
+  function clearRegion(region, mask = gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT) {
+    viewportTop(region);
+    scissorTop(region);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.clear(mask);
+    gl.disable(gl.SCISSOR_TEST);
+  }
+  function insetRect(r, pad) {
+    const x = Math.min(r.x + pad, r.x + r.w);
+    const y = Math.min(r.y + pad, r.y + r.h);
+    return {
+      x,
+      y,
+      w: Math.max(1, r.w - pad * 2),
+      h: Math.max(1, r.h - pad * 2),
+    };
+  }
+  function fitRect(container, sourceSize) {
+    const sourceW = Math.max(1, Number(sourceSize[0] || 1));
+    const sourceH = Math.max(1, Number(sourceSize[1] || 1));
+    const containerAspect = container.w / Math.max(1, container.h);
+    const sourceAspect = sourceW / sourceH;
+    let w = container.w;
+    let h = container.h;
+    if (containerAspect > sourceAspect) {
+      w = Math.max(1, Math.floor(container.h * sourceAspect));
+    } else {
+      h = Math.max(1, Math.floor(container.w / sourceAspect));
+    }
+    return {
+      x: Math.floor(container.x + (container.w - w) / 2),
+      y: Math.floor(container.y + (container.h - h) / 2),
+      w: Math.floor(w),
+      h: Math.floor(h),
+    };
+  }
+  function active2D() {
+    const out = [];
+    if (els.showRgb.checked && state.textureAvailable.rgb) out.push(['RGB', 0, null, () => state.colorSize]);
+    if (els.showRaw.checked && state.textureAvailable.raw) out.push(['Raw Depth', 1, 'raw', () => state.rawSize]);
+    if (els.showPred.checked && state.textureAvailable.predDisplay) {
+      out.push(['Pred Depth', 2, 'pred', () => state.predDisplaySize]);
+    }
+    return out;
+  }
+  function twoDLayoutKey(region) {
+    // 由「实际绘制的 2D 面板集合 + 各自源尺寸 + 该条带矩形」决定面板布局；稳态不变，
+    // 只有切换 RGB/Raw/Pred、源尺寸变化或窗口 resize 时才变。用来判断是否需要清 2D 条带，
+    // 避免逐帧整屏清把瞬时未重画的面板刷黑。
+    const panels = active2D()
+      .map((p) => {
+        const s = p[3]();
+        return `${p[0]}:${s[0]}x${s[1]}`;
+      })
+      .join(',');
+    return `${region.x},${region.y},${region.w},${region.h}|${panels}`;
+  }
+  function hasCloud() {
+    return (
+      (els.showRawCloud.checked && state.textureAvailable.rgb && state.textureAvailable.rawCloud)
+      || (els.showPredCloud.checked && state.textureAvailable.rgb && state.textureAvailable.predDisplay)
+    );
+  }
+  function topSafeInset() {
+    if (!els.topbar || !state.ui.topSafeCssPx) return 0;
+    const dpr = canvas.width / Math.max(1, canvas.clientWidth);
+    return Math.min(Math.floor(canvas.height * 0.28), Math.ceil(state.ui.topSafeCssPx * dpr));
+  }
+  function refreshTopSafeInset() {
+    if (!els.topbar) {
+      state.ui.topSafeCssPx = 0;
+      return;
+    }
+    const next = Math.ceil(Math.max(0, els.topbar.getBoundingClientRect().bottom) + 8);
+    if (next === state.ui.topSafeCssPx) return;
+    state.ui.topSafeCssPx = next;
+    state.ui.labelsDirty = true;
+  }
+  function layout() {
+    const twoD = active2D().length > 0;
+    const cloud = hasCloud();
+    const w = canvas.width, h = canvas.height;
+    const top = twoD ? topSafeInset() : 0;
+    if (twoD && cloud) {
+      const twoDH = Math.min(Math.floor(h * 0.38), Math.max(1, h - top - 1));
+      return {
+        top: top ? { x: 0, y: 0, w, h: top } : null,
+        twoD: { x: 0, y: top, w, h: twoDH },
+        cloud: { x: 0, y: top + twoDH, w, h: Math.max(1, h - top - twoDH) },
+      };
+    }
+    if (twoD) return { top: top ? { x: 0, y: 0, w, h: top } : null, twoD: { x: 0, y: top, w, h: Math.max(1, h - top) }, cloud: null };
+    if (cloud) return { twoD: null, cloud: { x: 0, y: 0, w, h } };
+    return { twoD: null, cloud: null };
+  }
+  function label(name, r) {
+    const dpr = canvas.width / Math.max(1, canvas.clientWidth);
+    return `<span class="label" style="left:${r.x / dpr + 10}px;top:${r.y / dpr + 10}px">${name}</span>`;
+  }
+  function draw2D(region, collectLabels = true) {
+    const panels = active2D();
+    if (!panels.length) return '';
+    gl.disable(gl.SCISSOR_TEST);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+    gl.depthMask(false);
+    bindFullscreenQuad(imageLoc);
+    gl.uniform1i(imageLoc.rgb, 0);
+    gl.uniform1i(imageLoc.depth, 1);
+    gl.uniform1i(imageLoc.lut, 3);
+    bindTexture(0, gl.TEXTURE_2D, tex.rgb);
+    bindTexture(3, gl.TEXTURE_2D, tex.lut);
+    // uDepth(usampler2D, 单元 1) 先挂完整整型占位：RGB 面板(mode 0)不采样它，但若单元 1
+    // 残留点云绑定的非整型 tex.rgb，sampler 类型不匹配会使整次 draw 被丢弃、RGB 变黑。
+    // raw/pred 面板会在循环内用各自整型深度纹理覆盖单元 1。
+    bindTexture(1, gl.TEXTURE_2D, tex.depthDummy);
+    let labels = '';
+    const gap = Math.max(8, Math.round(Math.min(canvas.width, canvas.height) * 0.008));
+    const panelW = Math.floor(region.w / panels.length);
+    panels.forEach((p, i) => {
+      const cell = { x: region.x + i * panelW, y: region.y, w: i === panels.length - 1 ? region.w - i * panelW : panelW, h: region.h };
+      const r = fitRect(insetRect(cell, gap), p[3]());
+      state.measure.panels.push({
+        name: p[0],
+        kind: p[2] || 'rgb',
+        rect: r,
+        size: p[3](),
+      });
+      viewportTop(r);
+      gl.uniform1i(imageLoc.mode, p[1]);
+      if (p[2] === 'raw') {
+        bindTexture(1, gl.TEXTURE_2D, tex.raw);
+        gl.uniform1f(imageLoc.vmin, Number(els.rawMin.value));
+        gl.uniform1f(imageLoc.vmax, Math.max(Number(els.rawMax.value), Number(els.rawMin.value) + 0.01));
+      } else if (p[2] === 'pred') {
+        bindTexture(1, gl.TEXTURE_2D, predDisplayTexture());
+        const range = els.predAuto.checked ? state.predAutoRange : [Number(els.predMin.value), Number(els.predMax.value)];
+        gl.uniform1f(imageLoc.vmin, range[0]);
+        gl.uniform1f(imageLoc.vmax, Math.max(range[1], range[0] + 0.000001));
+      }
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      if (collectLabels) labels += label(p[0], r);
+    });
+    return labels;
+  }
+  function effectiveStride(size) {
+    let s = Number(els.pointStride.value);
+    const budget = Number(els.pointBudget.value) || 0;
+    if (!budget) return s;
+    while (Math.ceil(size[0] / s) * Math.ceil(size[1] / s) > budget && s < 64) s += 1;
+    return s;
+  }
+  function activeCloudStrideState() {
+    const requested = Number(els.pointStride.value);
+    const effective = [];
+    if (els.showRawCloud.checked && state.textureAvailable.rawCloud) {
+      effective.push(['R', state.rawCloudStride]);
+    }
+    if (els.showPredCloud.checked && state.textureAvailable.predDisplay) {
+      effective.push(['P', effectiveStride(state.predDisplaySize)]);
+    }
+    if (!effective.length) return { requested, effective: requested, text: String(requested) };
+    const unique = [...new Set(effective.map((entry) => entry[1]))];
+    const maxEffective = Math.max(...unique);
+    if (unique.length === 1) {
+      const value = unique[0];
+      return {
+        requested,
+        effective: value,
+        text: value === requested ? String(requested) : `${requested} -> ${value}`,
+      };
+    }
+    return {
+      requested,
+      effective: maxEffective,
+      text: `${requested} -> ${effective.map((entry) => entry.join('')).join('/')}`,
+    };
+  }
+  function drawCloud(region, which) {
+    const size = which === 'raw' ? state.rawCloudSize : state.predDisplaySize;
+    const hasDepthTexture = which === 'raw'
+      ? state.textureAvailable.rawCloud
+      : state.textureAvailable.predDisplay;
+    if (!state.textureAvailable.rgb || !hasDepthTexture) return 0;
+    if (!size[0] || !size[1] || !state.intr) return 0;
+    const stride = which === 'raw' ? 1 : effectiveStride(size);
+    const cols = Math.ceil(size[0] / stride);
+    const rows = Math.ceil(size[1] / stride);
+    const count = cols * rows;
+    const sx = size[0] / state.colorSize[0];
+    const sy = size[1] / state.colorSize[1];
+    const fx = Number(state.intr.fx || state.colorSize[0]) * sx;
+    const fy = Number(state.intr.fy || state.colorSize[1]) * sy;
+    const ppx = Number(state.intr.ppx || state.colorSize[0] / 2) * sx;
+    const ppy = Number(state.intr.ppy || state.colorSize[1] / 2) * sy;
+    gl.useProgram(cloudLoc.program);
+    bindTexture(0, gl.TEXTURE_2D, which === 'raw' ? tex.rawCloud : predDisplayTexture());
+    bindTexture(1, gl.TEXTURE_2D, tex.rgb);
+    gl.uniform1i(cloudLoc.depth, 0);
+    gl.uniform1i(cloudLoc.rgb, 1);
+    gl.uniform2f(cloudLoc.depthSize, size[0], size[1]);
+    gl.uniform2f(cloudLoc.rgbSize, state.colorSize[0], state.colorSize[1]);
+    gl.uniform1f(cloudLoc.fx, fx);
+    gl.uniform1f(cloudLoc.fy, fy);
+    gl.uniform1f(cloudLoc.ppx, ppx);
+    gl.uniform1f(cloudLoc.ppy, ppy);
+    gl.uniform1f(cloudLoc.maxDepth, Number(els.cloudMax.value));
+    gl.uniform1f(cloudLoc.pointSize, Number(els.pointSize.value));
+    gl.uniform1i(cloudLoc.stride, stride);
+    if (which === 'raw') gl.uniform4f(cloudLoc.tint, 1.0, 1.0, 1.0, 0.86);
+    else gl.uniform4f(cloudLoc.tint, 0.72, 1.0, 1.0, 0.68);
+    gl.uniform1i(cloudLoc.outlierEnabled, els.outlierEnabled.checked ? 1 : 0);
+    gl.uniform1i(cloudLoc.outlierRadius, Math.round(Number(els.outlierRadius.value)));
+    gl.uniform1f(cloudLoc.outlierDepthTol, Number(els.outlierDepthTol.value));
+    gl.uniform1i(cloudLoc.outlierMinPts, Math.round(Number(els.outlierMinPts.value)));
+    const aspect = region.w / Math.max(1, region.h);
+    mat4PerspectiveOut(matrixScratch.proj, 58 * Math.PI / 180, aspect, 0.02, 30);
+    mat4TranslateOut(matrixScratch.camera, state.view.panX, state.view.panY, -state.view.distance);
+    mat4RotateYOut(matrixScratch.ry, state.view.yaw);
+    mat4RotateXOut(matrixScratch.rx, state.view.pitch);
+    mat4MultiplyOut(matrixScratch.model, matrixScratch.ry, matrixScratch.rx);
+    mat4MultiplyOut(matrixScratch.view, matrixScratch.camera, matrixScratch.model);
+    mat4MultiplyOut(matrixScratch.mvp, matrixScratch.proj, matrixScratch.view);
+    gl.uniformMatrix4fv(cloudLoc.mvp, false, matrixScratch.mvp);
+    gl.drawArrays(gl.POINTS, 0, count);
+    return count;
+  }
+  function draw() {
+    resize();
+    const displayedNewFrame = consumePendingFrame();
+    pollUpscaleTimers();
+    const now = performance.now();
+    const dt = state.lastDrawAt ? Math.min((now - state.lastDrawAt) / 1000, 0.1) : 0;
+    state.lastDrawAt = now;
+    if (state.orbit.active) {
+      updateOrbit(dt, now);
+    } else {
+      const rotateSpeed = Number(els.rotateSpeed.value);
+      if (els.autoRotate.checked && rotateSpeed !== 0) {
+        state.view.yaw = wrapDegrees(state.view.yaw * RAD + rotateSpeed * dt) * DEG;
+        if (now - state.ui.lastViewSliderSyncAt >= 250) {
+          syncViewSliders();
+          state.ui.lastViewSliderSyncAt = now;
+          markOutputsDirty();
+        }
+      }
+    }
+    gl.clearColor(0.014, 0.016, 0.018, 1);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.DEPTH_TEST);
+    if (!state.texturesReady) {
+      clearFullFrame();
+      state.measure.panels = [];
+      const emptyLabels = hasAnyStream()
+        ? '<span class="label" style="left:18px;top:58px">Waiting for frames</span>'
+        : noVisualizationLabel();
+      state.ui.staticLabelsHtml = emptyLabels;
+      state.ui.labelsDirty = false;
+      setLabelsHtml(state.ui.staticLabelsHtml);
+      tickRenderFps(now);
+      tickDisplayFps(now, displayedNewFrame);
+      flushUiOutputs(now);
+      requestAnimationFrame(draw);
+      return;
+    }
+    const parts = layout();
+    // 2D 面板布局签名：切换视图、源尺寸变化、或纹理异步可用导致面板增减时变化。
+    const twoDKey = parts.twoD ? twoDLayoutKey(parts.twoD) : null;
+    const twoDChanged = twoDKey !== state.ui.twoDLayoutKey;
+    if (twoDChanged) {
+      state.ui.twoDLayoutKey = twoDKey;
+      // 布局变了，标签必须随之重建，否则会停留在旧布局位置而错位（如关 raw 再开后）。
+      state.ui.labelsDirty = true;
+    }
+    // 点云是逐帧旋转的 3D 视图，必须每帧清（color+depth）；顶部安全区也每帧清。
+    // 2D 条带是静态图，仅在布局变化时清一次：逐帧整屏清会在某帧 2D 面板没被完整重画时
+    // 把它刷成黑，导致闪烁/黑屏。
+    if (parts.cloud) {
+      clearRegion(parts.cloud);
+      if (parts.top) clearRegion(parts.top, gl.COLOR_BUFFER_BIT);
+      if (parts.twoD && twoDChanged) clearRegion(parts.twoD, gl.COLOR_BUFFER_BIT);
+    } else {
+      clearFullFrame();
+    }
+    const rebuildLabels = state.ui.labelsDirty;
+    let staticLabels = rebuildLabels ? '' : state.ui.staticLabelsHtml;
+    state.measure.panels = [];
+    if (parts.twoD) staticLabels += draw2D(parts.twoD, rebuildLabels);
+    let rawCount = 0, predCount = 0;
+    if (parts.cloud) {
+      viewportTop(parts.cloud);
+      scissorTop(parts.cloud);
+      gl.enable(gl.SCISSOR_TEST);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthMask(true);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      if (els.showRawCloud.checked) rawCount = drawCloud(parts.cloud, 'raw');
+      if (els.showPredCloud.checked) predCount = drawCloud(parts.cloud, 'pred');
+      gl.disable(gl.BLEND);
+      gl.disable(gl.DEPTH_TEST);
+      gl.disable(gl.SCISSOR_TEST);
+      gl.depthMask(false);
+      if (rebuildLabels) staticLabels += label('3D Cloud', parts.cloud);
+    }
+    const rawPointsText = rawCount ? rawCount.toLocaleString() : '--';
+    const predPointsText = predCount ? predCount.toLocaleString() : '--';
+    if (
+      rawPointsText !== state.stats.rawPointsText
+      || predPointsText !== state.stats.predPointsText
+    ) {
+      state.stats.rawPointsText = rawPointsText;
+      state.stats.predPointsText = predPointsText;
+      markOutputsDirty();
+    }
+    if (rebuildLabels) {
+      state.ui.staticLabelsHtml = staticLabels || noVisualizationLabel();
+      state.ui.labelsDirty = false;
+    }
+    setLabelsHtml(state.ui.staticLabelsHtml + measureOverlayHtml());
+    tickRenderFps(now);
+    tickDisplayFps(now, displayedNewFrame);
+    flushUiOutputs(now);
+    requestAnimationFrame(draw);
+  }
+
+  applyDemoModeDefaults();
+  setPanelMinimized(demoMode);
+  refreshTopSafeInset();
+  syncFullscreenButton();
+  syncViewSliders();
+  syncOutputs();
+  refreshStatus();
+  setInterval(refreshStatus, 1000);
+  draw();
+})();
+</script>
+</body>
+</html>

@@ -9,7 +9,14 @@ from typing import Any
 import cv2
 import numpy as np
 
-from .packets import CameraSource, FramePacket, PredictionConsumer, PredictionPacket
+from .packets import (
+    CameraSource,
+    FramePacket,
+    PredictionConsumer,
+    PredictionPacket,
+    RealtimePostprocessor,
+    RealtimePreprocessor,
+)
 
 
 def _numpy(value: Any) -> np.ndarray:
@@ -50,9 +57,9 @@ class RealtimePipeline:
         self,
         camera: CameraSource,
         runtime: Any,
-        preprocessor: Any,
+        preprocessor: RealtimePreprocessor,
         *,
-        postprocessor: MetricDepthPostprocessor | None = None,
+        postprocessor: RealtimePostprocessor | None = None,
         consumers: Iterable[PredictionConsumer] = (),
     ) -> None:
         self.camera = camera
@@ -88,6 +95,8 @@ class RealtimePipeline:
         return packet
 
     def run(self, *, max_frames: int | None = None) -> Iterator[PredictionPacket]:
+        if max_frames is not None and max_frames < 0:
+            raise ValueError("max_frames cannot be negative")
         self.start()
         count = 0
         while max_frames is None or count < max_frames:
@@ -105,3 +114,10 @@ class RealtimePipeline:
             close()
         self.camera.close()
         self._started = False
+
+    def __enter__(self) -> "RealtimePipeline":
+        self.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()

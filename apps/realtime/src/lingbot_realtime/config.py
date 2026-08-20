@@ -17,6 +17,7 @@ class AppConfig:
     width: int = 640
     height: int = 480
     fps: int = 30
+    serial: str | None = None
     camera_read_timeout_sec: float = 3.0
     max_depth_m: float = 6.0
     resolution_level: int = 0
@@ -32,12 +33,12 @@ class AppConfig:
     cloud_stride: int = 2
     cloud_point_budget: int = 180_000
     record_enabled: bool = True
-    record_root: Path = Path("apps/lingbot_realtime/runs/recordings")
+    record_root: Path = Path("apps/realtime/runs/recordings")
     record_session_id: str | None = None
     record_overwrite: bool = False
     max_record_frames: int = 0
     save_results: bool = False
-    output_root: Path = Path("apps/lingbot_realtime/runs")
+    output_root: Path = Path("apps/realtime/runs")
     vis_min_m: float = 0.1
     vis_max_m: float = 5.0
     pred_vis_percentile_min: float = 1.0
@@ -75,8 +76,8 @@ class AppConfig:
             raise ValueError("--resolution-level must be between 0 and 9")
         if self.num_tokens <= 0:
             raise ValueError("--num-tokens must be positive")
-        if self.preview_fps <= 0:
-            raise ValueError("--preview-fps must be positive")
+        if self.preview_fps < 0:
+            raise ValueError("--preview-fps cannot be negative")
         if self.ack_timeout_sec <= 0:
             raise ValueError("--ack-timeout must be positive")
         if self.send_timeout_sec <= 0:

@@ -38,7 +38,7 @@ class D435HostPreprocessor:
 
     def raw_depth_m(self, frame: FramePacket) -> np.ndarray:
         values = frame.raw_depth_mm.astype(np.float32) / np.float32(self.depth_scale)
-        invalid = (frame.raw_depth_mm == 0) | ~np.isfinite(values) | (values >= self.max_depth_m)
+        invalid = (frame.raw_depth_mm == 0) | ~np.isfinite(values) | (values > self.max_depth_m)
         np.clip(values, 0.0, self.max_depth_m, out=values)
         values[invalid] = 0.0
         return np.ascontiguousarray(values, dtype=np.float32)

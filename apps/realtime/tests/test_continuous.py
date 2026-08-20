@@ -98,14 +98,30 @@ def test_connect_disconnect_inference_record_and_realtime_ack(tmp_path) -> None:
         assert client.post("/record/toggle").status_code == 200
         assert client.post("/inference?enabled=false").status_code == 200
         assert client.post("/inference?enabled=true").status_code == 200
-        with client.websocket_connect("/ws/realtime?cloud_point_budget=40") as websocket:
+        with client.websocket_connect(
+            "/ws/realtime?send_color=false&send_raw_cloud=true"
+            "&send_pred_cloud=true&cloud_point_budget=40"
+        ) as websocket:
             ready = websocket.receive_json()
+            assert ready["protocol"] == "lingbot.realtime.webgl.v2"
             assert ready["flow_control"] == "frame_ack"
+            assert len(ready["colormap_lut_rgb"]) == 256 * 3
             header = websocket.receive_json()
             payload = websocket.receive_bytes()
             assert header["payload_bytes"] == len(payload)
+            assert header["streams"]["color"] is False
+            assert "color" not in header
+            assert np.prod(header["raw_cloud_depth"]["shape"]) <= 40
             assert np.prod(header["pred_cloud_depth"]["shape"]) <= 40
             websocket.send_json({"type": "frame_ack", "frame_id": header["frame_id"]})
+        with client.websocket_connect("/ws/pointcloud?point_budget=40&stream_fps=0") as websocket:
+            ready = websocket.receive_json()
+            assert ready["coordinate"] == "x_right_y_up_z_forward_negative"
+            header = websocket.receive_json()
+            payload = websocket.receive_bytes()
+            assert header["bytes"] == len(payload)
+            assert header["points"] <= 40
+            assert header["fps"] > 0
         assert client.post("/camera/disconnect").status_code == 200
 
 

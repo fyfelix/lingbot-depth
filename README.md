@@ -144,6 +144,27 @@ result/
 
 **Available examples:** 8 example scenes (0-7) included in `examples/` directory.
 
+## Realtime D435 and TensorRT
+
+The local realtime application provides continuous RealSense D435 capture, MDM or TensorRT
+inference, the aligned WebGL UI, recording, raw/predicted point clouds, and snapshot measurement:
+
+```bash
+python -m pip install -e "apps/realtime[test,realsense,deploy]"
+
+# Hardware-free UI and protocol smoke test
+lingbot-realtime --source fixture --backend mock --bind 127.0.0.1
+
+# Local TensorRT FP16 runtime
+lingbot-realtime --source realsense --backend tensorrt \
+  --engine runs/deploy/d435-fp16/model.engine \
+  --manifest runs/deploy/d435-fp16/deployment.json --device cuda
+```
+
+See [apps/realtime/README.md](apps/realtime/README.md) for local TensorRT export,
+RealSense setup, WebGL controls, recording contracts, and tests. This path intentionally does not
+include the AS-Depth realtime Docker/container branch.
+
 ## Evaluation
 
 The repository includes a unified evaluation pipeline for HAMMER, ClearPose,

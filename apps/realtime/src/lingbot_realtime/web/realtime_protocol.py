@@ -43,13 +43,23 @@ def build_web_frame(
     packet: PredictionPacket,
     *,
     max_depth_m: float,
+    include_color: bool = True,
+    include_raw: bool = True,
+    include_pred: bool = True,
+    include_raw_cloud: bool = False,
+    include_pred_cloud: bool = True,
     cloud_stride: int,
     cloud_point_budget: int,
     fields: dict[str, Any],
 ) -> tuple[dict[str, Any], bytes]:
+    prediction_available = packet.result is not None
     frame = WebPublisher(max_depth_m=max_depth_m).build_frame(
         to_wire_packet(packet),
-        include_pred=packet.result is not None,
+        include_color=include_color,
+        include_raw=include_raw,
+        include_pred=include_pred and prediction_available,
+        include_raw_cloud=include_raw_cloud,
+        include_pred_cloud=include_pred_cloud and prediction_available,
         cloud_stride=cloud_stride,
         cloud_point_budget=cloud_point_budget,
         header_fields={

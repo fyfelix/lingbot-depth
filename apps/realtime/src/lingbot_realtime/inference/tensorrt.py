@@ -16,6 +16,8 @@ import numpy as np
 from lingbot_realtime.domain import InferenceResult, RGBDFrame
 from lingbot_realtime.inference.mock import depth_to_points
 from lingbot_realtime.inference.preprocessing import sanitize_metric_depth
+from lingbot_realtime.realtime import D435HostPreprocessor, FramePacket
+from lingbot_realtime.realtime.preprocess import Resolution
 
 
 class TensorRTRunner(Protocol):
@@ -236,8 +238,7 @@ class _TensorRTEngineRunner:
         self._input_dtype = _trt_dtype(trt, self._engine.get_tensor_dtype(self._input_name))
         self._output_dtype = _trt_dtype(trt, self._engine.get_tensor_dtype(self._output_name))
         if require_fp16 and (
-            self._input_dtype != np.dtype(np.float16)
-            or self._output_dtype != np.dtype(np.float16)
+            self._input_dtype != np.dtype(np.float16) or self._output_dtype != np.dtype(np.float16)
         ):
             self.close()
             raise RuntimeError("formal TensorRT engine must use FP16 input and output")
@@ -310,6 +311,14 @@ class TensorRTInferenceEngine:
         self.requested_device = "cuda" if device == "auto" else device
         self.max_depth_m = float(max_depth_m)
         self._runner = runner
+        # MDM performs ImageNet normalization inside its RGB-D encoder.  The
+        # local TensorRT graph therefore consumes RGB in [0, 1], unlike the
+        # AS-Depth graph that normalizes on the host.
+        self._preprocessor = D435HostPreprocessor(
+            Resolution(480, 640),
+            depth_scale=1000.0,
+            max_depth_m=self.max_depth_m,
+        )
 
     @property
     def name(self) -> str:
@@ -337,20 +346,16 @@ class TensorRTInferenceEngine:
         self._runner = _TensorRTEngineRunner(self.engine_path, device=self.requested_device)
 
     def _prepare(self, frame: RGBDFrame) -> np.ndarray:
-        rgb = cv2.resize(
-            frame.color_rgb.astype(np.float32) / 255.0,
-            (640, 480),
-            interpolation=cv2.INTER_LINEAR,
+        depth_m = sanitize_metric_depth(frame.depth_m, self.max_depth_m)
+        raw_mm = np.rint(depth_m * np.float32(1000.0))
+        raw_mm[(raw_mm < 0.0) | (raw_mm > np.iinfo(np.uint16).max)] = 0.0
+        packet = FramePacket(
+            frame_id=frame.frame_id,
+            timestamp_ns=int(frame.timestamp * 1_000_000_000),
+            color_bgr=np.ascontiguousarray(frame.color_rgb[..., ::-1]),
+            raw_depth_mm=np.ascontiguousarray(raw_mm, dtype=np.uint16),
         )
-        depth = cv2.resize(
-            sanitize_metric_depth(frame.depth_m, self.max_depth_m),
-            (640, 480),
-            interpolation=cv2.INTER_NEAREST,
-        )
-        return np.ascontiguousarray(
-            np.concatenate((rgb.transpose(2, 0, 1), depth[None]), axis=0)[None],
-            dtype=np.float16,
-        )
+        return np.ascontiguousarray(self._preprocessor.prepare(packet), dtype=np.float16)
 
     def infer(self, frame: RGBDFrame) -> InferenceResult:
         if self._runner is None:
