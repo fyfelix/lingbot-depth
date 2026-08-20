@@ -40,6 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument(
+        "--camera-read-timeout",
+        type=float,
+        default=3.0,
+        help="Maximum wait for one camera frame before marking the source unhealthy",
+    )
     parser.add_argument("--max-depth", type=float, default=6.0)
     parser.add_argument("--vis-min", type=float, default=0.1)
     parser.add_argument("--vis-max", type=float, default=5.0)
@@ -89,6 +95,7 @@ def build_config(argv: Sequence[str] | None = None) -> AppConfig:
         width=args.width,
         height=args.height,
         fps=args.fps,
+        camera_read_timeout_sec=args.camera_read_timeout,
         max_depth_m=args.max_depth,
         vis_min_m=args.vis_min,
         vis_max_m=args.vis_max,

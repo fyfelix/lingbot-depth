@@ -162,6 +162,25 @@ Linux 上安装 `realsense` extra 后，应用会在实际选择 `--source reals
 `pyrealsense2`。默认请求 `640x480@30`，失败时依次尝试 15 FPS 和 6 FPS；深度对齐到 color，
 使用设备报告的 depth scale 和 color intrinsics。
 
+本机 NVIDIA ARM 环境使用 RSUSB 后端启动，避免 native UVC/V4L2 路径触发 xHCI 故障：
+
+```bash
+apps/lingbot_realtime/scripts/run_realsense_rsusb.sh
+```
+
+脚本默认使用 `asdepth` Conda 环境、`/home/asdepth/librealsense/build/Release` 和
+`6 FPS + mock` 推理；可用 `LINGBOT_REALTIME_RSUSB_ENV`、
+`LINGBOT_LIBREALSENSE_RSUSB_ROOT`、`LINGBOT_REALTIME_FPS`、`LINGBOT_REALTIME_PORT` 覆盖。
+
+### USB 稳定性与故障恢复
+
+- D435 优先直连主机 USB 3.x 端口，使用短的、带屏蔽的 USB 3 数据线；不要在相机和主机之间串接无源 Hub。USB 2 线可以作为带宽降级排障手段。
+- 启动服务前先运行 `rs-enumerate-devices`。确认设备可见后再启动推理服务，先用
+  `--no-inference` 或 `--backend mock` 验证相机链路。
+- 运行期间观察 `curl http://127.0.0.1:8000/status` 和 `dmesg -w`。应用会在启动前快速枚举设备，启动失败后检查设备是否仍在总线，并以最长 30 秒的退避重试；连续 3 次失败后自动熔断，需点击“连接相机”才会再次尝试，避免反复重启 pipeline。
+- 如果内核出现 `xHCI host controller ... assume dead`、`HC died` 或连续的 UVC `-110` 超时，拔插相机通常无法恢复已经失效的 USB 主控；应停止服务并重启主机，再检查 `lsusb -d 8086:0b07` 和 `rs-enumerate-devices`。
+- 保持 librealsense、D435 固件和主机内核在经过验证的版本组合；升级其中任一项后，先做 1 分钟 sensor-only 采集，再启用模型和录制。
+
 macOS 的源码构建与 USB 检查工具仍位于 `scripts/install_pyrealsense2_macos.sh`、
 `scripts/check_realsense_macos.py` 和 `scripts/run_realsense_macos.sh`。
 

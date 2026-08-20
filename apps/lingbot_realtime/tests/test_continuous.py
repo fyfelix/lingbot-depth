@@ -113,3 +113,37 @@ def test_point_budget_increases_stride() -> None:
     stride = WebPublisher.effective_stride((480, 640), requested=1, point_budget=1000)
     assert stride > 1
     assert ((479 + stride) // stride) * ((639 + stride) // stride) <= 1000
+
+
+def test_camera_retries_pause_after_repeated_failures() -> None:
+    class FailingSource:
+        name = "fixture"
+
+        def start(self) -> None:
+            raise RuntimeError("synthetic camera failure")
+
+        def read(self, timeout_sec: float = 5.0):
+            raise AssertionError("read should not be called")
+
+        def stop(self) -> None:
+            return None
+
+    config = AppConfig(source="fixture", auto_connect=True, inference_enabled=False)
+    runtime = RuntimeController(
+        config,
+        FailingSource(),
+        None,
+        PersistenceService(False, config.output_root, config.max_depth_m),
+    )
+    runtime.start()
+    try:
+        _wait(lambda: runtime.status()["camera_retry_paused"], timeout=5.0)
+        status = runtime.status()
+        assert status["camera_status"] == "error"
+        assert "Automatic retries paused" in status["camera_error"]
+        assert status["frame_drops"] == 3
+
+        runtime.connect_camera()
+        assert runtime.status()["camera_retry_paused"] is False
+    finally:
+        runtime.shutdown()

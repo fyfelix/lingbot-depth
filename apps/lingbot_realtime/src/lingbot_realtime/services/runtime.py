@@ -82,6 +82,8 @@ class RuntimeController:
         self._active_capture: CaptureRecord | None = None
         self._camera_status = "idle"
         self._camera_error: str | None = None
+        self._camera_failures = 0
+        self._camera_retry_paused = False
         self._camera_requested = bool(config.auto_connect)
         self._model_status = "disabled" if engine is None else "idle"
         self._model_error: str | None = None
@@ -151,6 +153,8 @@ class RuntimeController:
                 raise RuntimeConflict("Service is stopping")
             self._camera_requested = True
             self._camera_error = None
+            self._camera_failures = 0
+            self._camera_retry_paused = False
             self._touch_locked()
             return self._status_locked()
 
@@ -158,6 +162,8 @@ class RuntimeController:
         recorder: Recorder | None = None
         with self._condition:
             self._camera_requested = False
+            self._camera_failures = 0
+            self._camera_retry_paused = False
             self._record_on = False
             recorder, self._recorder = self._recorder, None
             self._camera_status = (
@@ -253,6 +259,7 @@ class RuntimeController:
         source_active = False
         inference_tracker = _FpsTracker()
         e2e_tracker = _FpsTracker()
+        retry_delay_sec = 0.5
         while True:
             with self._condition:
                 self._condition.wait_for(
@@ -278,7 +285,7 @@ class RuntimeController:
                         self._camera_status = "running"
                         self._touch_locked()
                 started = time.perf_counter()
-                frame = self.source.read(timeout_sec=0.75)
+                frame = self.source.read(timeout_sec=self.config.camera_read_timeout_sec)
                 with self._condition:
                     inference_enabled = self._inference_enabled and self._model_status == "ready"
                 result = None
@@ -312,8 +319,11 @@ class RuntimeController:
                     self._publication_id += 1
                     self._frame_count += 1
                     self._camera_error = None
+                    self._camera_failures = 0
+                    self._camera_retry_paused = False
                     self._inference_fps, self._inference_avg_fps, self._inference_window_fps = inf
                     self._e2e_fps, self._e2e_avg_fps, self._e2e_window_fps = e2e
+                    retry_delay_sec = 0.5
                     recorder = self._recorder if self._record_on and result is not None else None
                     self._touch_locked()
                 if recorder is not None:
@@ -349,9 +359,28 @@ class RuntimeController:
                 with self._condition:
                     self._frame_drops += 1
                     self._camera_status = "error"
-                    self._camera_error = str(exc) or exc.__class__.__name__
+                    error = str(exc) or exc.__class__.__name__
+                    self._camera_error = error
+                    self._camera_failures += 1
+                    if self._camera_failures >= 3:
+                        self._camera_requested = False
+                        self._camera_retry_paused = True
+                        self._camera_error = (
+                            f"{error} Automatic retries paused after "
+                            f"{self._camera_failures} consecutive failures; "
+                            "press Connect to retry."
+                        )
                     self._touch_locked()
-                time.sleep(0.5)
+                # Hardware/USB failures can persist for several seconds. Back off
+                # retries without making disconnect or shutdown wait for a sleep.
+                with self._condition:
+                    self._condition.wait_for(
+                        lambda: self._stop_requested or not self._camera_requested,
+                        timeout=retry_delay_sec,
+                    )
+                # Keep persistent USB failures from repeatedly restarting the
+                # librealsense pipeline and destabilizing the host controller.
+                retry_delay_sec = min(retry_delay_sec * 2.0, 30.0)
             with self._condition:
                 disconnect = not self._camera_requested or self._stop_requested
             if disconnect and source_active:
@@ -383,6 +412,7 @@ class RuntimeController:
             "source": self.source.name,
             "camera_status": self._camera_status,
             "camera_error": self._camera_error,
+            "camera_retry_paused": self._camera_retry_paused,
             "model_status": self._model_status,
             "model_error": self._model_error,
             "engine": self.engine.name if self.engine is not None else "sensor-only",

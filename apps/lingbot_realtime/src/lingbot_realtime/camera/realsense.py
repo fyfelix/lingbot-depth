@@ -38,10 +38,29 @@ class RealSenseFrameSource:
             ) from exc
         return rs
 
+    @staticmethod
+    def _ensure_device(rs: Any) -> None:
+        """Fail fast when USB enumeration cannot see a RealSense device.
+
+        ``pipeline.start`` has no timeout and some librealsense builds hold the
+        Python GIL while waiting for a missing USB device.  Checking the context
+        first keeps the web/control plane responsive while the worker retries.
+        """
+        try:
+            devices = rs.context().query_devices()
+            count = len(devices)
+        except RuntimeError as exc:
+            raise RuntimeError(f"Unable to enumerate RealSense devices: {exc}") from exc
+        if count == 0:
+            raise RuntimeError(
+                "No RealSense device detected. Check the USB connection and device permissions."
+            )
+
     def start(self) -> None:
         if self._pipeline is not None:
             return
         rs = self._import_rs()
+        self._ensure_device(rs)
         errors: list[str] = []
         profile = None
         pipeline = None
@@ -66,6 +85,14 @@ class RealSenseFrameSource:
                 with suppress(Exception):
                     candidate_pipeline.stop()
                 errors.append(f"{width}x{height}@{fps}: {exc}")
+                # Do not try additional profiles after the device has vanished.
+                # Repeated pipeline starts can aggravate a failing USB controller.
+                try:
+                    if len(rs.context().query_devices()) == 0:
+                        break
+                except RuntimeError as probe_exc:
+                    errors.append(f"device probe: {probe_exc}")
+                    break
 
         if pipeline is None or profile is None or selected is None:
             raise RuntimeError("Unable to start RealSense. Tried: " + "; ".join(errors))

@@ -17,6 +17,7 @@ class AppConfig:
     width: int = 640
     height: int = 480
     fps: int = 30
+    camera_read_timeout_sec: float = 3.0
     max_depth_m: float = 6.0
     resolution_level: int = 0
     num_tokens: int = 1200
@@ -62,6 +63,8 @@ class AppConfig:
             raise ValueError("--engine is required when --backend=tensorrt")
         if self.width <= 0 or self.height <= 0 or self.fps <= 0:
             raise ValueError("Camera width, height and fps must be positive")
+        if self.camera_read_timeout_sec <= 0:
+            raise ValueError("Camera read timeout must be positive")
         if self.max_depth_m <= 0:
             raise ValueError("--max-depth must be positive")
         if self.vis_min_m < 0 or self.vis_max_m <= self.vis_min_m:
